@@ -73,13 +73,27 @@ export function AppLayout() {
 
           {/* User info / Logout */}
           <div className="border-t border-gray-200 p-4">
-            <div className="mb-3">
-              <p className="truncate text-sm font-medium text-gray-900">
-                {user?.displayName || 'User'}
-              </p>
-              <p className="truncate text-xs text-gray-500">
-                {user?.email || ''}
-              </p>
+            <div className="mb-3 flex items-center gap-3">
+              {user?.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt=""
+                  className="h-8 w-8 rounded-full"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-sm font-medium text-blue-700">
+                  {(user?.displayName || 'U')[0]}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-gray-900">
+                  {user?.displayName || 'User'}
+                </p>
+                <p className="truncate text-xs text-gray-500">
+                  {user?.email || ''}
+                </p>
+              </div>
             </div>
             <button
               onClick={handleLogout}

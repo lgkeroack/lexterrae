@@ -13,7 +13,7 @@ Canadian Jurisdiction Document Management Platform. Users upload PDF/text docume
 | Database | PostgreSQL 16 |
 | Cache/Sessions | Redis 7 |
 | File Storage | MinIO (local) / AWS S3 (prod) |
-| Auth | JWT (access + refresh tokens), bcrypt |
+| Auth | Google OAuth 2.0, JWT (access tokens in memory, refresh tokens in HTTP-only cookies) |
 | Monorepo | pnpm workspaces |
 | Testing | Vitest (configured but no tests written yet) |
 
@@ -23,9 +23,9 @@ Canadian Jurisdiction Document Management Platform. Users upload PDF/text docume
 apps/
   api/          Express backend (port 3001)
     src/
-      routes/         auth, documents, jurisdictions, health
+      routes/         auth (Google OAuth), documents, jurisdictions, health
       services/       auth, document, file, jurisdiction, audit
-      middleware/     auth (JWT), validate (Zod), error-handler, request-id
+      middleware/     auth (JWT + Redis revocation check), validate (Zod), error-handler, request-id
       validators/    Zod schemas for request validation
       config/        env, database (Prisma), redis, s3
       lib/           errors (custom classes), logger (Pino)
@@ -33,10 +33,10 @@ apps/
       schema.prisma  5 models: User, Document, Jurisdiction, DocumentJurisdiction, AuditLog
   web/          React frontend (port 5173, proxies /api to 3001)
     src/
-      pages/          Login, Register, Upload, Documents, DocumentDetail, DocumentBrowser
+      pages/          Login, AuthCallback, Upload, Documents, DocumentDetail, DocumentBrowser
       components/     auth/, upload/, map/, browser/, common/, layout/
       stores/         authStore, documentStore, jurisdictionStore (Zustand)
-      services/       api.ts (axios client)
+      services/       api.ts (fetch client with token refresh)
       data/           provinces.ts, map-paths.ts (SVG paths)
 packages/
   shared/       Shared TypeScript types & constants
@@ -58,9 +58,23 @@ pnpm typecheck            # TypeScript strict mode check
 pnpm test                 # Run tests (none exist yet)
 ```
 
+## Authentication Flow (Google OAuth)
+
+1. Frontend loads Google OAuth config from `GET /api/auth/google/config`
+2. User clicks "Sign in with Google" -> redirected to Google consent screen
+3. Google redirects back to `/auth/callback?code=...`
+4. Frontend sends code to `POST /api/auth/google/callback`
+5. Backend exchanges code for Google ID token, finds/creates user
+6. Backend returns access token in response body + sets refresh token as HTTP-only cookie
+7. Frontend stores access token in memory only (never localStorage)
+8. On page reload, `AuthGuard` calls `POST /api/auth/refresh` (cookie sent automatically)
+9. Logout: `POST /api/auth/logout` revokes both tokens + clears cookie
+
+**Required env vars:** `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (from Google Cloud Console)
+
 ## Database Models
 
-- **User**: email, passwordHash, displayName
+- **User**: googleId (unique), email, displayName, avatarUrl
 - **Document**: title, description, fileKey (S3), fileType, fileSizeBytes, contentText (extracted PDF text), tags[], soft-delete via deletedAt
 - **Jurisdiction**: name, code, level (federal/provincial/territorial/municipal), parentId (self-referential tree), legalSystem (common_law/civil_law)
 - **DocumentJurisdiction**: many-to-many junction table
@@ -68,8 +82,12 @@ pnpm test                 # Run tests (none exist yet)
 
 ## API Endpoints
 
-- `POST /api/auth/register|login|refresh|logout` - Auth (register/login rate-limited)
-- `POST /api/documents` - Upload (multipart, requires auth)
+- `GET /api/auth/google/config` - Returns Google client ID + redirect URI
+- `POST /api/auth/google/callback` - Exchange Google auth code for tokens (rate-limited)
+- `POST /api/auth/refresh` - Refresh via HTTP-only cookie (rate-limited)
+- `POST /api/auth/logout` - Revoke both tokens, clear cookie
+- `GET /api/auth/me` - Current user profile (requires auth)
+- `POST /api/documents` - Upload (multipart, requires auth, rate-limited)
 - `GET /api/documents` - List with pagination/filtering/sorting (requires auth)
 - `GET /api/documents/:id` - Detail with jurisdictions (requires auth)
 - `PATCH /api/documents/:id` - Update metadata (requires auth)
@@ -79,32 +97,23 @@ pnpm test                 # Run tests (none exist yet)
 - `GET /api/jurisdictions/:id` - Single with parent/children (public)
 - `GET /api/health` - Health check (checks DB, Redis, S3)
 
-## Architecture Decisions
+## Security Architecture
 
-- Error responses follow RFC 7807 Problem Details format
-- File type validation uses magic bytes, not just extensions
-- Filenames sanitized to prevent path traversal
-- IP addresses hashed (HMAC-SHA256) in audit logs, never stored raw
-- Access tokens: 15min expiry; Refresh tokens: 7 day expiry with rotation
-- Structured JSON logging via Pino with request ID propagation
-- Jurisdiction data seeded, not user-editable
-
-## Known Issues & Security Concerns
-
-See REVIEW.md for the full audit. Critical items:
-1. Access tokens stored in localStorage (XSS vulnerable) - should be memory-only
-2. Refresh tokens returned in response body - should be HTTP-only cookies
-3. CORS `origin: false` in production blocks all cross-origin requests
-4. No rate limiting on `/refresh` endpoint or document operations
-5. Logout only revokes refresh token, not access token
-6. No tests written yet
-7. No CI/CD pipeline configured
+- **Tokens**: Access token (15m) in memory only; refresh token (7d) in HTTP-only, Secure, SameSite=Strict cookie
+- **Token revocation**: Both access and refresh tokens checked against Redis revocation list
+- **CORS**: Uses `ALLOWED_ORIGINS` env var (comma-separated), always explicit origins
+- **Rate limiting**: OAuth callback (20/15min), token refresh (30/15min), uploads (50/hr)
+- **Request ID**: Client-supplied `X-Request-Id` validated as UUID format, otherwise server-generated
+- **File security**: Magic byte validation, filename sanitization, forced download headers
+- **Audit logging**: All actions logged with HMAC-SHA256 hashed IPs
+- **Error responses**: RFC 7807 Problem Details format, no sensitive data leaked
 
 ## Implementation Status
 
-**Done (Phases 1-3 mostly complete):**
+**Done:**
 - Monorepo scaffolding, Docker Compose, Prisma schema + seed
-- Auth system (register, login, refresh, logout, JWT middleware)
+- Google OAuth authentication (replaces email/password)
+- HTTP-only cookie token management (replaces localStorage)
 - Document upload/CRUD with S3 storage and PDF text extraction
 - Interactive Canada map with province drill-down and municipality selection
 - Document browser with pagination, filtering, sorting, search
@@ -114,10 +123,8 @@ See REVIEW.md for the full audit. Critical items:
 **Not Done:**
 - Testing (unit, integration, E2E) - Vitest configured but zero tests
 - CI/CD (no GitHub Actions)
-- Email verification / password reset
-- Bulk document operations (Phase 4.3)
-- Accessibility / WCAG compliance (Phase 5.2)
+- Bulk document operations
+- Accessibility / WCAG compliance
 - API documentation (OpenAPI spec)
-- Upload retry / progress (WebSocket)
+- Upload progress (WebSocket)
 - Auto-purge of soft-deleted documents after 30 days
-- Virus scanning integration (ClamAV placeholder)

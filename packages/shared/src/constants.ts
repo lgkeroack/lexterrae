@@ -10,9 +10,6 @@ export const MAX_TAGS_PER_DOCUMENT = 20;
 export const MAX_TAG_LENGTH = 50;
 export const MAX_JURISDICTIONS_PER_DOCUMENT = 50;
 
-export const PASSWORD_MIN_LENGTH = 12;
-export const PASSWORD_MAX_LENGTH = 128;
-
 export const PAGINATION_DEFAULT_PAGE = 1;
 export const PAGINATION_DEFAULT_PAGE_SIZE = 20;
 export const PAGINATION_MAX_PAGE_SIZE = 100;

@@ -1,55 +1,93 @@
-import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { env } from '../config/env.js';
-import { AuthenticationError, ConflictError, ValidationError } from '../lib/errors.js';
+import { AuthenticationError } from '../lib/errors.js';
 import { createModuleLogger } from '../lib/logger.js';
 
 const logger = createModuleLogger('auth.service');
-const BCRYPT_ROUNDS = 12;
+
+interface GoogleTokenPayload {
+  sub: string;
+  email: string;
+  name: string;
+  picture?: string;
+  email_verified: boolean;
+}
 
 export class AuthService {
-  async register(email: string, password: string, displayName: string) {
-    // Validate password strength
-    this.validatePassword(password);
-
-    // Check if user exists
-    const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-    if (existing) {
-      throw new ConflictError('An account with this email already exists');
-    }
-
-    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const user = await prisma.user.create({
-      data: {
-        email: email.toLowerCase(),
-        passwordHash,
-        displayName,
-      },
-      select: { id: true, email: true, displayName: true, createdAt: true, updatedAt: true },
+  /**
+   * Exchange a Google OAuth authorization code for tokens, then find or create the user.
+   */
+  async googleAuth(code: string, redirectUri: string) {
+    // Exchange code for Google tokens
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code,
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
     });
 
-    logger.info({ userId: user.id, message: 'User registered successfully' });
-    const tokens = this.generateTokens(user.id);
-    return { user, ...tokens };
-  }
+    if (!tokenRes.ok) {
+      const err = await tokenRes.text();
+      logger.error({ message: 'Google token exchange failed', error: err });
+      throw new AuthenticationError('Google authentication failed');
+    }
 
-  async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    const tokenData = await tokenRes.json() as { id_token: string };
+
+    // Decode and verify the ID token
+    const googleUser = this.decodeGoogleIdToken(tokenData.id_token);
+
+    if (!googleUser.email_verified) {
+      throw new AuthenticationError('Google email is not verified');
+    }
+
+    // Find or create user
+    let user = await prisma.user.findUnique({ where: { googleId: googleUser.sub } });
+
     if (!user) {
-      throw new AuthenticationError('Invalid email or password');
+      // Check if email already exists from a different Google account
+      const existingByEmail = await prisma.user.findUnique({ where: { email: googleUser.email } });
+      if (existingByEmail) {
+        // Link this Google ID to existing account
+        user = await prisma.user.update({
+          where: { email: googleUser.email },
+          data: {
+            googleId: googleUser.sub,
+            avatarUrl: googleUser.picture,
+          },
+        });
+      } else {
+        user = await prisma.user.create({
+          data: {
+            googleId: googleUser.sub,
+            email: googleUser.email,
+            displayName: googleUser.name,
+            avatarUrl: googleUser.picture,
+          },
+        });
+        logger.info({ userId: user.id, message: 'New user created via Google OAuth' });
+      }
+    } else {
+      // Update avatar and display name from Google on each login
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          avatarUrl: googleUser.picture,
+          displayName: googleUser.name,
+        },
+      });
     }
 
-    const isValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isValid) {
-      throw new AuthenticationError('Invalid email or password');
-    }
-
-    logger.info({ userId: user.id, message: 'User logged in successfully' });
+    const { googleId, ...safeUser } = user;
     const tokens = this.generateTokens(user.id);
-    const { passwordHash, ...safeUser } = user;
     return { user: safeUser, ...tokens };
   }
 
@@ -76,16 +114,21 @@ export class AuthService {
     }
   }
 
-  async logout(refreshToken: string) {
+  async logout(refreshToken: string, accessJti?: string) {
     try {
       const payload = jwt.verify(refreshToken, env.JWT_SECRET, { ignoreExpiration: true }) as { jti: string };
       await redis.set(`revoked:${payload.jti}`, '1', 'EX', 7 * 24 * 60 * 60);
     } catch {
       // Token already invalid, nothing to revoke
     }
+
+    // Also revoke the access token if provided
+    if (accessJti) {
+      await redis.set(`revoked:${accessJti}`, '1', 'EX', 15 * 60);
+    }
   }
 
-  private generateTokens(userId: string) {
+  generateTokens(userId: string) {
     const accessJti = uuidv4();
     const refreshJti = uuidv4();
 
@@ -101,27 +144,20 @@ export class AuthService {
       { expiresIn: env.JWT_REFRESH_EXPIRY as string & jwt.SignOptions['expiresIn'], issuer: 'lexterrae', audience: 'lexterrae-api' },
     );
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, accessJti };
   }
 
-  private validatePassword(password: string) {
-    if (password.length < 12) {
-      throw new ValidationError('Password must be at least 12 characters long');
+  private decodeGoogleIdToken(idToken: string): GoogleTokenPayload {
+    // Decode the JWT payload (Google's ID token is a standard JWT)
+    const parts = idToken.split('.');
+    if (parts.length !== 3) {
+      throw new AuthenticationError('Invalid Google ID token format');
     }
-    if (password.length > 128) {
-      throw new ValidationError('Password must be 128 characters or fewer');
-    }
-    if (!/[A-Z]/.test(password)) {
-      throw new ValidationError('Password must contain at least one uppercase letter');
-    }
-    if (!/[a-z]/.test(password)) {
-      throw new ValidationError('Password must contain at least one lowercase letter');
-    }
-    if (!/\d/.test(password)) {
-      throw new ValidationError('Password must contain at least one digit');
-    }
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
-      throw new ValidationError('Password must contain at least one special character');
+    try {
+      const payload = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString());
+      return payload as GoogleTokenPayload;
+    } catch {
+      throw new AuthenticationError('Failed to decode Google ID token');
     }
   }
 }

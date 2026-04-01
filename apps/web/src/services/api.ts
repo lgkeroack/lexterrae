@@ -1,8 +1,6 @@
 import type {
   AuthResponse,
   TokenRefreshResponse,
-  LoginRequest,
-  RegisterRequest,
   Document,
   DocumentWithJurisdictions,
   DocumentUploadRequest,
@@ -16,7 +14,7 @@ import type {
 const BASE_URL = '/api';
 
 function generateRequestId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  return crypto.randomUUID();
 }
 
 let accessToken: string | null = null;
@@ -65,7 +63,6 @@ async function refreshAccessToken(): Promise<string> {
       method: 'POST',
       credentials: 'include',
       headers: {
-        'Content-Type': 'application/json',
         'X-Request-Id': generateRequestId(),
       },
     });
@@ -157,25 +154,14 @@ function buildQueryString(params: Record<string, unknown>): string {
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────
 
-  async login(email: string, password: string): Promise<AuthResponse> {
-    const body: LoginRequest = { email, password };
-    const data = await request<AuthResponse>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-    accessToken = data.accessToken;
-    return data;
+  async getGoogleConfig(): Promise<{ clientId: string; redirectUri: string }> {
+    return request('/auth/google/config');
   },
 
-  async register(
-    email: string,
-    password: string,
-    displayName: string,
-  ): Promise<AuthResponse> {
-    const body: RegisterRequest = { email, password, displayName };
-    const data = await request<AuthResponse>('/auth/register', {
+  async googleCallback(code: string, redirectUri: string): Promise<AuthResponse> {
+    const data = await request<AuthResponse>('/auth/google/callback', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ code, redirectUri }),
     });
     accessToken = data.accessToken;
     return data;

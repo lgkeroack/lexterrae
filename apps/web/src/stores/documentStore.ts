@@ -28,10 +28,12 @@ interface DocumentState {
   clearUploadError: () => void;
 }
 
+import { getAccessToken } from '../services/api';
+
 const API_BASE = '/api';
 
 function getAuthHeaders(): Record<string, string> {
-  const token = localStorage.getItem('accessToken');
+  const token = getAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -92,7 +94,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         xhr.addEventListener('error', () => reject(new Error('Upload failed')));
         xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
         xhr.open('POST', `${API_BASE}/documents/upload`);
-        const token = localStorage.getItem('accessToken');
+        const token = getAccessToken();
         if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
         xhr.send(formData);
       });

@@ -46,7 +46,7 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:'],
+        imgSrc: ["'self'", 'data:', 'https://lh3.googleusercontent.com'],
         connectSrc: ["'self'"],
         fontSrc: ["'self'"],
         objectSrc: ["'none'"],
@@ -62,10 +62,10 @@ app.use(
   }),
 );
 
-// SECURITY: Restrict CORS to known origins in production
+// SECURITY: Restrict CORS to known origins
 app.use(
   cors({
-    origin: env.NODE_ENV === 'production' ? false : true,
+    origin: env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()),
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],

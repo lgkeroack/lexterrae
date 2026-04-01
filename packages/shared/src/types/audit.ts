@@ -5,10 +5,8 @@ export type AuditAction =
   | 'document.download'
   | 'document.jurisdiction_assign'
   | 'document.jurisdiction_remove'
-  | 'user.register'
-  | 'user.login'
+  | 'user.google_login'
   | 'user.login_failed'
-  | 'user.password_change'
   | 'user.account_delete';
 
 export interface AuditLogEntry {

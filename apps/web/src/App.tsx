@@ -7,8 +7,10 @@ import { AuthGuard } from './components/AuthGuard';
 const LoginPage = React.lazy(() =>
   import('./pages/LoginPage').then((m) => ({ default: m.LoginPage })),
 );
-const RegisterPage = React.lazy(() =>
-  import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })),
+const AuthCallbackPage = React.lazy(() =>
+  import('./pages/AuthCallbackPage').then((m) => ({
+    default: m.AuthCallbackPage,
+  })),
 );
 const DocumentBrowserPage = React.lazy(() =>
   import('./pages/DocumentBrowserPage').then((m) => ({
@@ -37,7 +39,7 @@ export function App() {
     <Suspense fallback={<SuspenseFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route
           element={
             <AuthGuard>

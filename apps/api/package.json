@@ -22,7 +22,6 @@
     "@aws-sdk/lib-storage": "^3.700.0",
     "@lexterrae/shared": "workspace:*",
     "@prisma/client": "^6.2.0",
-    "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^4.21.0",
@@ -39,7 +38,6 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
-    "@types/bcrypt": "^5.0.2",
     "@types/cookie-parser": "^1.4.7",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",

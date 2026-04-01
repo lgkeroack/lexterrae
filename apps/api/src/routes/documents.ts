@@ -1,5 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
+import rateLimit from 'express-rate-limit';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { documentService } from '../services/document.service.js';
@@ -13,6 +14,23 @@ import {
 import { ValidationError } from '../lib/errors.js';
 
 const router: ReturnType<typeof Router> = Router();
+
+/**
+ * Rate limiter for uploads: 50 per hour per IP.
+ */
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    type: 'https://lexterrae.io/problems/rate-limit',
+    title: 'Too Many Requests',
+    status: 429,
+    detail: 'Too many uploads. Please try again later.',
+    code: 'RATE_LIMIT_EXCEEDED',
+  },
+});
 
 /**
  * Multer configuration for handling file uploads in memory.
@@ -35,6 +53,7 @@ router.use(authenticate);
  */
 router.post(
   '/',
+  uploadLimiter,
   upload.single('file'),
   validate({ body: uploadDocumentSchema }),
   async (req: Request, res: Response, next: NextFunction) => {

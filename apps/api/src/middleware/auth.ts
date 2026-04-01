@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
+import { redis } from '../config/redis.js';
 import { AuthenticationError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 
@@ -24,7 +25,7 @@ interface JwtPayload {
   exp?: number;
 }
 
-export function authenticate(req: Request, _res: Response, next: NextFunction): void {
+export async function authenticate(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader) {
@@ -53,12 +54,24 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
       return;
     }
 
+    // Check if access token has been revoked
+    const isRevoked = await redis.get(`revoked:${decoded.jti}`);
+    if (isRevoked) {
+      next(new AuthenticationError('Token has been revoked'));
+      return;
+    }
+
     req.context = {
       userId: decoded.userId,
     };
 
     next();
   } catch (err) {
+    if (err instanceof AuthenticationError) {
+      next(err);
+      return;
+    }
+
     if (err instanceof jwt.TokenExpiredError) {
       logger.debug({
         module: 'auth',

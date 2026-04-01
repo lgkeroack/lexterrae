@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { LoadingSpinner } from './common/LoadingSpinner';
@@ -10,11 +10,17 @@ interface AuthGuardProps {
 export function AuthGuard({ children }: AuthGuardProps) {
   const { isAuthenticated, isLoading, refreshToken } = useAuthStore();
   const navigate = useNavigate();
+  const attempted = useRef(false);
 
   useEffect(() => {
-    if (!isAuthenticated && !isLoading) {
-      refreshToken().catch(() => {
-        navigate('/login', { replace: true });
+    if (!isAuthenticated && !isLoading && !attempted.current) {
+      attempted.current = true;
+      refreshToken().then(() => {
+        // Check state after refresh attempt
+        const state = useAuthStore.getState();
+        if (!state.isAuthenticated) {
+          navigate('/login', { replace: true });
+        }
       });
     }
   }, [isAuthenticated, isLoading, refreshToken, navigate]);

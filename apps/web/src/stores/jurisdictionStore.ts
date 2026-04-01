@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ProvinceData, MunicipalityData } from '@lexterrae/shared';
+import { getAccessToken } from '../services/api';
 
 export interface JurisdictionSelection {
   id: string;
@@ -54,9 +55,10 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
   fetchProvinces: async () => {
     set({ isLoadingProvinces: true });
     try {
-      const token = localStorage.getItem('accessToken');
+      const token = getAccessToken();
       const res = await fetch(`${API_BASE}/jurisdictions/provinces`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json();

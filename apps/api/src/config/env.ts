@@ -16,6 +16,9 @@ const envSchema = z.object({
   MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(200).default(50),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().default(900000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().default(100),
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  ALLOWED_ORIGINS: z.string().default('http://localhost:5173'),
 });
 
 export type Env = z.infer<typeof envSchema>;
