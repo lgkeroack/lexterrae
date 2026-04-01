@@ -55,10 +55,14 @@ const refreshLimiter = rateLimit({
  * GET /api/auth/google/config
  * Returns the Google OAuth client ID and redirect URI for the frontend.
  */
-router.get('/google/config', (_req: Request, res: Response) => {
+router.get('/google/config', (req: Request, res: Response) => {
+  const origin = req.headers.origin || env.ALLOWED_ORIGINS.split(',')[0]!.trim();
+  const allowedOrigins = env.ALLOWED_ORIGINS.split(',').map((o) => o.trim());
+  const resolvedOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0]!;
+
   res.json({
     clientId: env.GOOGLE_CLIENT_ID,
-    redirectUri: `${env.ALLOWED_ORIGINS.split(',')[0]}/auth/callback`,
+    redirectUri: `${resolvedOrigin}/auth/callback`,
   });
 });
 
