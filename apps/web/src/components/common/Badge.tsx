@@ -31,15 +31,16 @@ export function Badge({ label, level, onRemove, className = '' }: BadgeProps) {
       {label}
       {onRemove && (
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation();
             onRemove();
           }}
           className="ml-0.5 inline-flex items-center rounded-full p-0.5
-            hover:bg-black/10 focus:outline-none"
+            hover:bg-black/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           aria-label={`Remove ${label}`}
         >
-          <X className="h-3 w-3" />
+          <X className="h-3 w-3" aria-hidden="true" />
         </button>
       )}
     </span>

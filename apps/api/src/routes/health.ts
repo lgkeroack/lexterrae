@@ -1,66 +1,70 @@
 import { Router } from 'express';
+import { HeadBucketCommand } from '@aws-sdk/client-s3';
+import type { HealthCheckResponse, ServiceHealth } from '@lexterrae/shared';
 import { prisma } from '../config/database.js';
 import { redis } from '../config/redis.js';
 import { s3Client } from '../config/s3.js';
 import { env } from '../config/env.js';
-import { ListBucketsCommand } from '@aws-sdk/client-s3';
 import { logger } from '../lib/logger.js';
 
 const router: ReturnType<typeof Router> = Router();
 
-interface ServiceStatus {
-  status: 'healthy' | 'unhealthy';
-  latencyMs?: number;
-  error?: string;
+const CHECK_TIMEOUT_MS = 3_000;
+
+/** Runs a dependency probe with a timeout so a hung dependency cannot hang the health endpoint. */
+async function probe(name: string, check: (signal: AbortSignal) => Promise<unknown>): Promise<ServiceHealth> {
+  const start = Date.now();
+  const controller = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      check(controller.signal),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error(`Timed out after ${CHECK_TIMEOUT_MS}ms`));
+        }, CHECK_TIMEOUT_MS);
+      }),
+    ]);
+    return { status: 'healthy', latencyMs: Date.now() - start };
+  } catch (err) {
+    const error = err instanceof Error ? err.message || err.name : 'Unknown error';
+    logger.error({ module: 'health', message: `${name} health check failed`, error });
+    return {
+      status: 'unhealthy',
+      latencyMs: Date.now() - start,
+      // SECURITY: Raw dependency errors can reveal hostnames/config; only expose them outside production
+      ...(env.NODE_ENV !== 'production' ? { error } : {}),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 router.get('/', async (_req, res) => {
-  const checks: Record<string, ServiceStatus> = {};
+  const [database, redisCheck, s3] = await Promise.all([
+    probe('Database', () => prisma.$queryRaw`SELECT 1`),
+    probe('Redis', () => redis.ping()),
+    probe('S3', (abortSignal) => s3Client.send(new HeadBucketCommand({ Bucket: env.S3_BUCKET }), { abortSignal })),
+  ]);
 
-  // Check database
-  const dbStart = Date.now();
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    checks['database'] = { status: 'healthy', latencyMs: Date.now() - dbStart };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : 'Unknown error';
-    checks['database'] = { status: 'unhealthy', latencyMs: Date.now() - dbStart, error };
-    logger.error({ module: 'health', message: 'Database health check failed', error });
-  }
-
-  // Check Redis
-  const redisStart = Date.now();
-  try {
-    await redis.ping();
-    checks['redis'] = { status: 'healthy', latencyMs: Date.now() - redisStart };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : 'Unknown error';
-    checks['redis'] = { status: 'unhealthy', latencyMs: Date.now() - redisStart, error };
-    logger.error({ module: 'health', message: 'Redis health check failed', error });
-  }
-
-  // Check S3
-  const s3Start = Date.now();
-  try {
-    await s3Client.send(new ListBucketsCommand({}));
-    checks['s3'] = { status: 'healthy', latencyMs: Date.now() - s3Start };
-  } catch (err) {
-    const error = err instanceof Error ? err.message : 'Unknown error';
-    checks['s3'] = { status: 'unhealthy', latencyMs: Date.now() - s3Start, error };
-    logger.error({ module: 'health', message: 'S3 health check failed', error });
-  }
-
+  const checks = { database, redis: redisCheck, s3 };
   const allHealthy = Object.values(checks).every((c) => c.status === 'healthy');
-  const statusCode = allHealthy ? 200 : 503;
+  // The API cannot serve anything without the database; Redis/S3 outages only degrade some features
+  const status: HealthCheckResponse['status'] =
+    database.status !== 'healthy' ? 'unhealthy' : allHealthy ? 'healthy' : 'degraded';
 
-  res.status(statusCode).json({
-    status: allHealthy ? 'healthy' : 'degraded',
+  const body: HealthCheckResponse = {
+    status,
     version: process.env['npm_package_version'] ?? '0.0.0',
     environment: env.NODE_ENV,
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
     checks,
-  });
+  };
+
+  res.set('Cache-Control', 'no-store');
+  res.status(status === 'unhealthy' ? 503 : 200).json(body);
 });
 
 export default router;

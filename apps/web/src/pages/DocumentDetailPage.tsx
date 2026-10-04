@@ -9,5 +9,6 @@ export function DocumentDetailPage() {
     return <Navigate to="/documents" replace />;
   }
 
-  return <DocumentDetail documentId={id} />;
+  // key: remount on id change so no local state (edit form, modal, preview) leaks between documents
+  return <DocumentDetail key={id} documentId={id} />;
 }

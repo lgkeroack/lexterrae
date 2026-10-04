@@ -27,6 +27,23 @@ router.get(
 );
 
 /**
+ * GET /api/jurisdictions/provinces
+ * Returns provinces/territories with their municipalities (shared `ProvinceData` shape).
+ * Must be registered before "/:id".
+ */
+router.get(
+  '/provinces',
+  async (_req: Request, res: Response, next: NextFunction) => {
+    try {
+      const provinces = await jurisdictionService.getProvinces();
+      res.status(200).json({ data: provinces });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
  * GET /api/jurisdictions/:id
  * Returns a single jurisdiction by ID, including parent and children.
  */

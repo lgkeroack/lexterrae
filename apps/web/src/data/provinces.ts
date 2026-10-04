@@ -14,7 +14,14 @@ export const FEDERAL_CODE = 'CA';
 
 /** Same derivation as `municipalityCode()` in apps/api/prisma/seed.ts. */
 export function municipalityCode(provinceCode: string, cityName: string): string {
-  return `${provinceCode}-${cityName.toUpperCase().replace(/\s+/g, '_').replace(/['’]/g, '_')}`;
+  const slug = cityName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['\u2019]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `${provinceCode}-${slug}`;
 }
 
 function province(

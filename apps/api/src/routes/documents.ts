@@ -9,8 +9,9 @@ import {
   updateDocumentSchema,
   documentQuerySchema,
   documentParamsSchema,
+  type DocumentQueryInput,
 } from '../validators/document.validator.js';
-import { ValidationError } from '../lib/errors.js';
+import { FileSizeError, ValidationError } from '../lib/errors.js';
 
 const router: ReturnType<typeof Router> = Router();
 
@@ -25,6 +26,23 @@ const upload = multer({
   },
 });
 
+/**
+ * Runs multer and converts its errors (e.g. LIMIT_FILE_SIZE) into application errors
+ * so they produce 413/400 problem responses instead of a generic 500.
+ */
+function handleUpload(req: Request, res: Response, next: NextFunction): void {
+  upload.single('file')(req, res, (err: unknown) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(new FileSizeError(`File exceeds the ${env.MAX_FILE_SIZE_MB} MB limit`));
+      }
+      return next(new ValidationError(`Invalid upload: ${err.message}`));
+    }
+    next(err);
+  });
+}
+
 // All document routes require authentication
 router.use(authenticate);
 
@@ -34,8 +52,8 @@ router.use(authenticate);
  * Expects a file field named "file" and JSON metadata fields.
  */
 router.post(
-  '/',
-  upload.single('file'),
+  ['/', '/upload'],
+  handleUpload,
   validate({ body: uploadDocumentSchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -77,18 +95,11 @@ router.get(
   validate({ query: documentQuerySchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
+      // validate() replaced req.query with the parsed/coerced values
+      const query = req.query as unknown as DocumentQueryInput;
       const result = await documentService.getDocuments({
         userId: req.context!.userId,
-        page: req.query['page'] as unknown as number,
-        pageSize: req.query['pageSize'] as unknown as number,
-        search: req.query['search'] as string | undefined,
-        jurisdictionLevel: req.query['jurisdictionLevel'] as string | undefined,
-        jurisdictionId: req.query['jurisdictionId'] as string | undefined,
-        fileType: req.query['fileType'] as string | undefined,
-        sortBy: (req.query['sortBy'] as string) || 'uploadedAt',
-        sortOrder: (req.query['sortOrder'] as 'asc' | 'desc') || 'desc',
-        dateFrom: req.query['dateFrom'] ? new Date(req.query['dateFrom'] as string) : undefined,
-        dateTo: req.query['dateTo'] ? new Date(req.query['dateTo'] as string) : undefined,
+        ...query,
       });
 
       res.status(200).json(result);
@@ -188,7 +199,12 @@ router.get(
 
       // SECURITY: Force download, prevent browser from rendering potentially malicious content
       res.setHeader('Content-Type', result.contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(result.filename)}"`);
+      // ASCII fallback plus RFC 5987 UTF-8 filename so non-ASCII names survive intact
+      const asciiName = result.filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(result.filename)}`,
+      );
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('X-Frame-Options', 'DENY');
       res.setHeader('Content-Security-Policy', "default-src 'none'");
@@ -197,6 +213,15 @@ router.get(
         res.setHeader('Content-Length', result.contentLength);
       }
 
+      // A storage error mid-stream must not crash the process (unhandled 'error' event)
+      result.stream.on('error', (streamErr) => {
+        if (!res.headersSent) {
+          next(streamErr);
+        } else {
+          res.destroy(streamErr);
+        }
+      });
+      res.on('close', () => result.stream.destroy());
       result.stream.pipe(res);
     } catch (err) {
       next(err);

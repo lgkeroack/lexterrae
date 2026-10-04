@@ -45,11 +45,11 @@ interface DocumentState {
 
 const API_BASE = '/api';
 
-/** The shared type uses snake_case sort keys; the API validator expects camelCase. */
-const SORT_FIELD_TO_API: Record<NonNullable<DocumentQueryParams['sortBy']>, string> = {
-  title: 'title',
+/** Normalise snake_case sort aliases to the API's canonical camelCase keys. */
+const SORT_FIELD_TO_API: Record<string, string> = {
   uploaded_at: 'uploadedAt',
   file_size_bytes: 'fileSizeBytes',
+  updated_at: 'updatedAt',
 };
 
 function getAuthHeaders(): Record<string, string> {
@@ -91,7 +91,7 @@ function buildListQuery(params: DocumentQueryParams): string {
   Object.entries(params).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') return;
     if (key === 'sortBy') {
-      searchParams.set(key, SORT_FIELD_TO_API[value as keyof typeof SORT_FIELD_TO_API] ?? String(value));
+      searchParams.set(key, SORT_FIELD_TO_API[String(value)] ?? String(value));
     } else {
       searchParams.set(key, String(value).trim());
     }

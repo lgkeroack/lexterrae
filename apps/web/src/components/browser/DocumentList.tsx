@@ -17,7 +17,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useDocumentStore } from '../../stores/documentStore';
-import type { DocumentQueryParams, DocumentWithJurisdictions, FileType } from '@lexterrae/shared';
+import type { DocumentQueryParams, DocumentWithJurisdictions, FileType, JurisdictionLevel } from '@lexterrae/shared';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
@@ -29,8 +29,7 @@ type SortField = NonNullable<DocumentQueryParams['sortBy']>;
 type SortOrder = NonNullable<DocumentQueryParams['sortOrder']>;
 
 const SORT_FIELDS: SortField[] = ['title', 'uploaded_at', 'file_size_bytes'];
-// The API's jurisdictionLevel filter only accepts these values.
-const LEVELS = ['federal', 'provincial', 'municipal'] as const;
+const LEVELS: JurisdictionLevel[] = ['federal', 'provincial', 'territorial', 'municipal'];
 const FILE_TYPES: FileType[] = ['pdf', 'txt'];
 const PAGE_SIZES = [10, 20, 50, 100];
 const DEFAULT_PAGE_SIZE = 20;
@@ -46,7 +45,7 @@ function parseParams(sp: URLSearchParams): Required<Pick<DocumentQueryParams, 'p
   const pageSize = Number.parseInt(sp.get('pageSize') ?? '', 10);
   const sortBy = sp.get('sortBy') as SortField | null;
   const sortOrder = sp.get('sortOrder');
-  const level = sp.get('jurisdictionLevel');
+  const level = sp.get('jurisdictionLevel') as JurisdictionLevel | null;
   const fileType = sp.get('fileType') as FileType | null;
   const search = (sp.get('search') ?? '').trim().slice(0, MAX_SEARCH_LENGTH);
   return {
@@ -55,7 +54,7 @@ function parseParams(sp: URLSearchParams): Required<Pick<DocumentQueryParams, 'p
     sortBy: sortBy && SORT_FIELDS.includes(sortBy) ? sortBy : DEFAULT_SORT,
     sortOrder: sortOrder === 'asc' || sortOrder === 'desc' ? sortOrder : DEFAULT_ORDER,
     search: search || undefined,
-    jurisdictionLevel: level && (LEVELS as readonly string[]).includes(level) ? level : undefined,
+    jurisdictionLevel: level && LEVELS.includes(level) ? level : undefined,
     fileType: fileType && FILE_TYPES.includes(fileType) ? fileType : undefined,
   };
 }
@@ -237,7 +236,7 @@ export function DocumentList() {
     setIsBulkDeleting(true);
     const ids = [...selectedIds];
     const results = await Promise.allSettled(ids.map((id) => deleteDocument(id)));
-    const failed = ids.filter((_, i) => results[i].status === 'rejected');
+    const failed = ids.filter((_, i) => results[i]?.status === 'rejected');
     setIsBulkDeleting(false);
     setShowBulkDelete(false);
     setSelectedIds(new Set(failed));
@@ -330,6 +329,7 @@ export function DocumentList() {
             <option value="">All jurisdictions</option>
             <option value="federal">Federal</option>
             <option value="provincial">Provincial</option>
+            <option value="territorial">Territorial</option>
             <option value="municipal">Municipal</option>
           </select>
           <label htmlFor="filter-type" className="sr-only">

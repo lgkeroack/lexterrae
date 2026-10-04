@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/database.js';
 import { env } from '../config/env.js';
-import { NotFoundError, ForbiddenError, FileSizeError, ValidationError } from '../lib/errors.js';
+import { NotFoundError, FileSizeError } from '../lib/errors.js';
 import { createModuleLogger } from '../lib/logger.js';
 import { fileService } from './file.service.js';
 import { jurisdictionService } from './jurisdiction.service.js';
@@ -68,22 +68,21 @@ export class DocumentService {
     const sanitizedFilename = fileService.sanitizeFilename(file.originalname);
     const { mimeType, extension } = await fileService.validateFileType(file.buffer, sanitizedFilename);
 
-    // Validate jurisdiction IDs exist
-    await jurisdictionService.getJurisdictionsByIds(jurisdictionIds);
+    // Validate jurisdictions exist (accepts UUIDs or jurisdiction codes such as "BC")
+    const jurisdictions = await jurisdictionService.resolveJurisdictionRefs(jurisdictionIds);
+    const resolvedJurisdictionIds = jurisdictions.map((j) => j.id);
+
+    // Extract searchable text (never throws)
+    const contentText = await fileService.extractText(file.buffer, extension);
 
     // Generate S3 key and upload
     const fileKey = fileService.generateFileKey(userId, extension);
     await fileService.streamToS3(fileKey, file.buffer, mimeType, sanitizedFilename);
 
-    // Extract text content for PDFs
-    let contentText: string | null = null;
-    if (extension === 'pdf') {
-      contentText = await fileService.extractPdfText(file.buffer);
-    }
-
-    // Create DB record with jurisdictions in a transaction
-    const document = await prisma.$transaction(async (tx) => {
-      const doc = await tx.document.create({
+    // Create DB record with jurisdictions; if it fails, remove the stored object so it is not orphaned
+    let document;
+    try {
+      document = await prisma.document.create({
         data: {
           userId,
           title,
@@ -95,7 +94,7 @@ export class DocumentService {
           contentText,
           tags: tags || [],
           jurisdictions: {
-            create: jurisdictionIds.map((jId) => ({
+            create: resolvedJurisdictionIds.map((jId) => ({
               jurisdictionId: jId,
             })),
           },
@@ -104,15 +103,22 @@ export class DocumentService {
           jurisdictions: {
             include: {
               jurisdiction: {
-                select: { id: true, name: true, code: true, level: true },
+                select: { id: true, name: true, code: true, level: true, parentId: true },
               },
             },
           },
         },
       });
-
-      return doc;
-    });
+    } catch (err) {
+      logger.error({
+        userId,
+        fileKey,
+        message: 'Failed to create document record; removing stored file',
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await fileService.deleteFromS3(fileKey).catch(() => undefined);
+      throw err;
+    }
 
     // Audit log (fire-and-forget)
     auditService.logAction({
@@ -121,7 +127,12 @@ export class DocumentService {
       action: 'document.upload',
       resourceType: 'document',
       resourceId: document.id,
-      changes: { title, fileType: extension, fileSizeBytes: file.size, jurisdictionIds },
+      changes: {
+        title,
+        fileType: extension,
+        fileSizeBytes: file.size,
+        jurisdictionIds: resolvedJurisdictionIds,
+      },
       requestId,
       outcome: 'success',
     });
@@ -141,7 +152,7 @@ export class DocumentService {
         jurisdictions: {
           include: {
             jurisdiction: {
-              select: { id: true, name: true, code: true, level: true },
+              select: { id: true, name: true, code: true, level: true, parentId: true },
             },
           },
         },
@@ -152,11 +163,12 @@ export class DocumentService {
       throw new NotFoundError('Document not found');
     }
 
+    // SECURITY: 404 rather than 403 so other users' document IDs are not revealed (07-SECURITY.md §1.4)
     if (document.userId !== userId) {
-      throw new ForbiddenError('You do not have access to this document');
+      throw new NotFoundError('Document not found');
     }
 
-    return this.formatDocument(document);
+    return this.formatDocument(document, { includeContent: true });
   }
 
   /**
@@ -189,7 +201,9 @@ export class DocumentService {
       where.OR = [
         { title: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
-        { tags: { hasSome: [search] } },
+        { originalFilename: { contains: search, mode: 'insensitive' } },
+        { contentText: { contains: search, mode: 'insensitive' } },
+        { tags: { hasSome: [...new Set([search, search.toLowerCase()])] } },
       ];
     }
 
@@ -208,8 +222,13 @@ export class DocumentService {
     }
 
     if (jurisdictionId) {
+      // Include sub-jurisdictions: filtering by "BC" also matches documents tagged with BC municipalities
+      const ids = await jurisdictionService.getSelfAndDescendantIds(jurisdictionId);
       where.jurisdictions = {
-        some: { jurisdictionId },
+        some: {
+          jurisdictionId: { in: ids },
+          ...(jurisdictionLevel ? { jurisdiction: { level: jurisdictionLevel } } : {}),
+        },
       };
     } else if (jurisdictionLevel) {
       where.jurisdictions = {
@@ -219,10 +238,11 @@ export class DocumentService {
       };
     }
 
-    // Build orderBy
-    const orderBy: Prisma.DocumentOrderByWithRelationInput = {
-      [sortBy]: sortOrder,
-    };
+    // Build orderBy; id as a tie-breaker keeps pagination stable when sort values collide
+    const orderBy: Prisma.DocumentOrderByWithRelationInput[] = [
+      { [sortBy]: sortOrder },
+      { id: sortOrder },
+    ];
 
     const [documents, total] = await Promise.all([
       prisma.document.findMany({
@@ -234,7 +254,7 @@ export class DocumentService {
           jurisdictions: {
             include: {
               jurisdiction: {
-                select: { id: true, name: true, code: true, level: true },
+                select: { id: true, name: true, code: true, level: true, parentId: true },
               },
             },
           },
@@ -248,6 +268,8 @@ export class DocumentService {
       pagination: {
         page,
         pageSize,
+        totalItems: total,
+        /** @deprecated alias of totalItems */
         total,
         totalPages: Math.ceil(total / pageSize),
       },
@@ -270,7 +292,7 @@ export class DocumentService {
     }
 
     if (existing.userId !== userId) {
-      throw new ForbiddenError('You do not have access to this document');
+      throw new NotFoundError('Document not found');
     }
 
     // Build update data
@@ -287,7 +309,7 @@ export class DocumentService {
       changes['description'] = { from: existing.description, to: description };
     }
 
-    if (tags !== undefined) {
+    if (tags !== undefined && JSON.stringify(tags) !== JSON.stringify(existing.tags)) {
       updateData.tags = tags;
       changes['tags'] = { from: existing.tags, to: tags };
     }
@@ -304,7 +326,7 @@ export class DocumentService {
         jurisdictions: {
           include: {
             jurisdiction: {
-              select: { id: true, name: true, code: true, level: true },
+              select: { id: true, name: true, code: true, level: true, parentId: true },
             },
           },
         },
@@ -325,7 +347,7 @@ export class DocumentService {
 
     logger.info({ userId, documentId, message: 'Document updated successfully' });
 
-    return this.formatDocument(document);
+    return this.formatDocument(document, { includeContent: true });
   }
 
   /**
@@ -346,7 +368,7 @@ export class DocumentService {
     }
 
     if (existing.userId !== userId) {
-      throw new ForbiddenError('You do not have access to this document');
+      throw new NotFoundError('Document not found');
     }
 
     await prisma.document.update({
@@ -387,7 +409,7 @@ export class DocumentService {
     }
 
     if (document.userId !== userId) {
-      throw new ForbiddenError('You do not have access to this document');
+      throw new NotFoundError('Document not found');
     }
 
     const fileData = await fileService.getFileStream(document.fileKey);
@@ -426,6 +448,7 @@ export class DocumentService {
       fileType: string;
       fileSizeBytes: number;
       originalFilename: string;
+      contentText?: string | null;
       tags: string[];
       uploadedAt: Date;
       updatedAt: Date;
@@ -436,9 +459,11 @@ export class DocumentService {
           name: string;
           code: string;
           level: string;
+          parentId: string | null;
         };
       }[];
     },
+    options: { includeContent?: boolean } = {},
   ) {
     return {
       id: doc.id,
@@ -449,6 +474,7 @@ export class DocumentService {
       fileSizeBytes: doc.fileSizeBytes,
       originalFilename: doc.originalFilename,
       tags: doc.tags,
+      ...(options.includeContent ? { contentText: doc.contentText ?? null } : {}),
       jurisdictions: doc.jurisdictions.map((dj) => dj.jurisdiction),
       uploadedAt: doc.uploadedAt,
       updatedAt: doc.updatedAt,

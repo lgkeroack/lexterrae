@@ -1,11 +1,43 @@
 import React, { useMemo } from 'react';
-import { useJurisdictionStore, type JurisdictionSelection } from '../../stores/jurisdictionStore';
-import { Badge } from '../common/Badge';
-import { Button } from '../common/Button';
+import { X } from 'lucide-react';
+import {
+  useJurisdictionStore,
+  MAX_JURISDICTION_SELECTIONS,
+  type JurisdictionSelection,
+} from '../../stores/jurisdictionStore';
+
+const chipColors: Record<JurisdictionSelection['level'], string> = {
+  federal: 'bg-green-100 text-green-800 border-green-200',
+  provincial: 'bg-blue-100 text-blue-800 border-blue-200',
+  territorial: 'bg-blue-100 text-blue-800 border-blue-200',
+  municipal: 'bg-gray-100 text-gray-800 border-gray-200',
+};
+
+/**
+ * Removable selection chip. Rendered locally (not via common/Badge) because this lives
+ * inside the upload <form>: the remove control must be type="button" so it never submits
+ * the form or becomes the form's implicit-submission default button.
+ */
+function SelectionChip({ selection, label, onRemove }: { selection: JurisdictionSelection; label: string; onRemove: () => void }) {
+  return (
+    <li
+      className={`inline-flex items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-1 text-xs font-medium ${chipColors[selection.level]}`}
+    >
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${label}`}
+        className="inline-flex items-center rounded-full p-0.5 hover:bg-black/10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        <X className="h-3 w-3" aria-hidden="true" />
+      </button>
+    </li>
+  );
+}
 
 export function JurisdictionSummary() {
-  const { selections, isFederalSelected, removeSelection, clearAll } =
-    useJurisdictionStore();
+  const { selections, removeSelection, clearAll } = useJurisdictionStore();
 
   const grouped = useMemo(() => {
     const federal: JurisdictionSelection[] = [];
@@ -22,89 +54,66 @@ export function JurisdictionSummary() {
   }, [selections]);
 
   const totalCount = selections.length;
+  const overLimit = totalCount > MAX_JURISDICTION_SELECTIONS;
+
+  const groups: { title: string; items: JurisdictionSelection[]; label: (s: JurisdictionSelection) => string }[] = [
+    { title: 'Federal', items: grouped.federal, label: (s) => s.name },
+    { title: 'Provincial / Territorial', items: grouped.provincial, label: (s) => s.name },
+    { title: 'Municipal', items: grouped.municipal, label: (s) => (s.parentName ? `${s.name}, ${s.parentName}` : s.name) },
+  ];
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="rounded-lg border border-gray-200 bg-white p-4" aria-live="polite">
+      <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-gray-900">
-          Jurisdiction Selections
-          {totalCount > 0 && (
-            <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-blue-600 px-1.5 text-xs font-medium text-white">
-              {totalCount}
-            </span>
-          )}
+          Selected jurisdictions
+          <span
+            className={`ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-xs font-medium ${
+              overLimit ? 'bg-red-600 text-white' : totalCount > 0 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+            }`}
+          >
+            {totalCount}/{MAX_JURISDICTION_SELECTIONS}
+          </span>
         </h3>
         {totalCount > 0 && (
-          <Button variant="ghost" size="sm" onClick={clearAll}>
+          <button
+            type="button"
+            onClick={clearAll}
+            className="rounded-md px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400"
+          >
             Clear all
-          </Button>
+          </button>
         )}
       </div>
 
       {totalCount === 0 ? (
-        <p className="py-4 text-center text-sm text-gray-500">
-          No jurisdictions selected. Use the map above to select provinces,
-          territories, or municipalities.
+        <p className="py-2 text-sm text-gray-500">
+          Nothing selected yet. Choose Federal, click provinces on the map, or use the list to pick
+          provinces, territories or municipalities.
         </p>
       ) : (
         <div className="space-y-3">
-          {/* Federal */}
-          {grouped.federal.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">
-                Federal
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {grouped.federal.map((s) => (
-                  <Badge
-                    key={s.id}
-                    label={s.name}
-                    level="federal"
-                    onRemove={() => removeSelection(s.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Provincial */}
-          {grouped.provincial.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">
-                Provincial / Territorial
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {grouped.provincial.map((s) => (
-                  <Badge
-                    key={s.id}
-                    label={s.name}
-                    level={s.level}
-                    onRemove={() => removeSelection(s.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Municipal */}
-          {grouped.municipal.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">
-                Municipal
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {grouped.municipal.map((s) => (
-                  <Badge
-                    key={s.id}
-                    label={`${s.name} (${s.parentName})`}
-                    level="municipal"
-                    onRemove={() => removeSelection(s.id)}
-                  />
-                ))}
-              </div>
-            </div>
+          {groups.map(
+            (g) =>
+              g.items.length > 0 && (
+                <div key={g.title}>
+                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">{g.title}</p>
+                  <ul className="flex flex-wrap gap-1.5" aria-label={g.title}>
+                    {g.items.map((s) => (
+                      <SelectionChip key={s.id} selection={s} label={g.label(s)} onRemove={() => removeSelection(s.id)} />
+                    ))}
+                  </ul>
+                </div>
+              )
           )}
         </div>
+      )}
+
+      {overLimit && (
+        <p className="mt-3 text-xs font-medium text-red-600">
+          A document can be tagged with at most {MAX_JURISDICTION_SELECTIONS} jurisdictions. Remove{' '}
+          {totalCount - MAX_JURISDICTION_SELECTIONS}, or select an entire province instead of many of its municipalities.
+        </p>
       )}
     </div>
   );

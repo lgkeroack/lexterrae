@@ -111,10 +111,7 @@ function notifyAuthFailure(): void {
 
 // ── Errors ──────────────────────────────────────────────────────────
 
-interface ProblemBody extends ApiErrorResponse {
-  code?: string;
-  errors?: { path?: string; message?: string }[];
-}
+type ProblemBody = ApiErrorResponse;
 
 export class ApiError extends Error {
   constructor(
@@ -407,15 +404,15 @@ export const api = {
     if (metadata.description) {
       formData.append('description', metadata.description);
     }
-    if (metadata.tags) {
-      formData.append('tags', JSON.stringify(metadata.tags));
-    }
-    formData.append('jurisdictionIds', JSON.stringify(metadata.jurisdictionIds));
+    // multer parses `field[]` into arrays, which the API's zod schema expects.
+    (metadata.tags ?? []).forEach((tag) => formData.append('tags[]', tag));
+    metadata.jurisdictionIds.forEach((id) => formData.append('jurisdictionIds[]', id));
 
-    return request<Document>('/documents', {
+    const res = await request<{ data: Document }>('/documents', {
       method: 'POST',
       body: formData,
     });
+    return res.data;
   },
 
   async updateDocument(
@@ -437,6 +434,7 @@ export const api = {
   // ── Jurisdictions ─────────────────────────────────────────────────
 
   async getJurisdictions(): Promise<JurisdictionTreeNode[]> {
-    return request<JurisdictionTreeNode[]>('/jurisdictions');
+    const res = await request<{ data: JurisdictionTreeNode[] }>('/jurisdictions');
+    return res.data;
   },
 } as const;
