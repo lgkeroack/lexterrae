@@ -93,3 +93,21 @@ export class ExternalServiceError extends AppError {
     super(message);
   }
 }
+
+export class PayloadTooLargeError extends AppError {
+  public readonly statusCode = 413;
+  public readonly code = 'PAYLOAD_TOO_LARGE';
+
+  constructor(message = 'Request body is too large') {
+    super(message);
+  }
+}
+
+export class ServiceUnavailableError extends AppError {
+  public readonly statusCode = 503;
+  public readonly code = 'SERVICE_UNAVAILABLE';
+
+  constructor(message = 'Service temporarily unavailable. Please try again shortly.') {
+    super(message);
+  }
+}

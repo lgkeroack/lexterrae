@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import Redis from 'ioredis';
 
 const prisma = new PrismaClient();
 
@@ -33,7 +34,23 @@ async function upsertJurisdiction(data: {
   });
 }
 
+/**
+ * Builds a stable ASCII code for a municipality, e.g. "QC-MONTREAL", "NL-ST_JOHNS".
+ * Accents are stripped and any non-alphanumeric run becomes a single underscore.
+ */
 function municipalityCode(provinceCode: string, cityName: string): string {
+  const slug = cityName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['\u2019]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `${provinceCode}-${slug}`;
+}
+
+/** Code format produced by earlier versions of this seed (kept so re-seeding renames instead of duplicating). */
+function legacyMunicipalityCode(provinceCode: string, cityName: string): string {
   return `${provinceCode}-${cityName.toUpperCase().replace(/\s+/g, '_').replace(/['']/g, '_')}`;
 }
 
@@ -258,6 +275,10 @@ export async function main() {
     // Upsert each municipality within this province / territory
     for (const cityName of pt.municipalities) {
       const code = municipalityCode(pt.code, cityName);
+      const legacyCode = legacyMunicipalityCode(pt.code, cityName);
+      if (legacyCode !== code) {
+        await prisma.jurisdiction.updateMany({ where: { code: legacyCode }, data: { code } });
+      }
       const municipality = await upsertJurisdiction({
         name: cityName,
         code,
@@ -272,6 +293,22 @@ export async function main() {
   // ─── Summary ──────────────────────────────────────────────────────────────────
   const totalCount = await prisma.jurisdiction.count();
   console.log(`\nSeeding complete. Total jurisdictions: ${totalCount}`);
+
+  // Invalidate the cached jurisdiction tree so the API serves fresh data (best effort).
+  const redis = new Redis(process.env['REDIS_URL'] ?? 'redis://localhost:6379', {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+  });
+  try {
+    await redis.connect();
+    await redis.del('jurisdictions:tree');
+    console.log('Cleared cached jurisdiction tree.');
+  } catch {
+    console.warn('Could not clear jurisdiction tree cache (Redis unavailable); it expires within 24h.');
+  } finally {
+    redis.disconnect();
+  }
 }
 
 main()

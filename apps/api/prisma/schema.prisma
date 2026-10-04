@@ -48,7 +48,7 @@ model Document {
 model Jurisdiction {
   id          String   @id @default(uuid()) @db.Uuid
   name        String   @db.VarChar(100)
-  code        String   @unique @db.VarChar(20)
+  code        String   @unique @db.VarChar(50)
   level       String   @db.VarChar(20)
   parentId    String?  @map("parent_id") @db.Uuid
   legalSystem String   @map("legal_system") @db.VarChar(20)

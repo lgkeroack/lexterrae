@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { ZodSchema, ZodError } from 'zod';
+import { ZodError, type ZodIssue, type ZodSchema } from 'zod';
 
 type ValidationTarget = 'body' | 'query' | 'params';
 
@@ -12,38 +12,27 @@ interface ValidationSchemas {
 export function validate(schemas: ValidationSchemas) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const targets: ValidationTarget[] = ['body', 'query', 'params'];
-    const allErrors: { target: string; issues: unknown[] }[] = [];
+    const issues: ZodIssue[] = [];
 
     for (const target of targets) {
       const schema = schemas[target];
       if (!schema) continue;
 
-      const result = schema.safeParse(req[target]);
+      // A missing body (e.g. no Content-Type) is treated as an empty object so the
+      // schema reports which fields are required instead of "Expected object".
+      const input: unknown = target === 'body' ? (req.body ?? {}) : req[target];
+      const result = schema.safeParse(input);
       if (!result.success) {
-        allErrors.push({
-          target,
-          issues: result.error.errors.map((issue) => ({
-            path: [target, ...issue.path].join('.'),
-            message: issue.message,
-            code: issue.code,
-          })),
-        });
+        // Prefix paths with the target so the client knows where the problem is (e.g. "body.email")
+        issues.push(...result.error.errors.map((issue) => ({ ...issue, path: [target, ...issue.path] })));
       } else {
         // Replace with parsed (and potentially transformed) data
         req[target] = result.data;
       }
     }
 
-    if (allErrors.length > 0) {
-      const combinedIssues = allErrors.flatMap((e) => e.issues);
-      const zodError = new ZodError(
-        allErrors.flatMap((e) => {
-          const schema = schemas[e.target as ValidationTarget]!;
-          const result = schema.safeParse(req[e.target as ValidationTarget]);
-          return result.success ? [] : result.error.errors;
-        })
-      );
-      next(zodError);
+    if (issues.length > 0) {
+      next(new ZodError(issues));
       return;
     }
 
