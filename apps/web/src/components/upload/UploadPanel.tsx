@@ -541,7 +541,7 @@ export function UploadPanel() {
 
         <Input
           id="upload-title"
-          label="Title *"
+          label="Title"
           value={title}
           onChange={(e) => {
             setTitle(e.target.value);

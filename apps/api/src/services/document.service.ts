@@ -203,8 +203,16 @@ export class DocumentService {
         { description: { contains: search, mode: 'insensitive' } },
         { originalFilename: { contains: search, mode: 'insensitive' } },
         { contentText: { contains: search, mode: 'insensitive' } },
-        { tags: { hasSome: [...new Set([search, search.toLowerCase()])] } },
       ];
+      // Case-insensitive partial match on tags (Prisma array filters are exact/case-sensitive only)
+      const likePattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      const tagMatches = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM documents
+        WHERE user_id = ${userId}::uuid AND deleted_at IS NULL
+          AND EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE ${likePattern})`;
+      if (tagMatches.length > 0) {
+        where.OR.push({ id: { in: tagMatches.map((r) => r.id) } });
+      }
     }
 
     if (fileType) {

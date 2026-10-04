@@ -79,7 +79,7 @@ export function JurisdictionSummary() {
           <button
             type="button"
             onClick={clearAll}
-            className="rounded-md px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="flex-shrink-0 whitespace-nowrap rounded-md px-2 py-1 text-sm font-medium text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-400"
           >
             Clear all
           </button>

@@ -6,7 +6,9 @@ export const redis = new Redis(env.REDIS_URL, {
   // Fail commands fast when Redis is down instead of hanging requests
   maxRetriesPerRequest: 3,
   connectTimeout: 5_000,
-  lazyConnect: true,
+  lazyConnect: true, // connected explicitly in server.ts
+  // Reject commands immediately while disconnected rather than queueing them (callers degrade gracefully)
+  enableOfflineQueue: false,
   // Back off reconnect attempts up to 10s
   retryStrategy: (times) => Math.min(times * 200, 10_000),
 });

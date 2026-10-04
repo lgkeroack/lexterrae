@@ -94,9 +94,16 @@ export function AppLayout() {
         aria-label="Sidebar"
         className={`
           fixed inset-y-0 left-0 z-30 w-64 max-w-[85vw] transform bg-white shadow-lg
-          transition-[transform,visibility] duration-200 ease-in-out
+          duration-200 ease-in-out
           lg:visible lg:relative lg:translate-x-0 lg:shadow-none lg:border-r lg:border-gray-200
-          ${sidebarOpen ? 'visible translate-x-0' : 'invisible -translate-x-full'}
+          ${
+            // Becomes visible instantly on open (so focus can move in), but stays
+            // visible until the slide-out finishes on close. Hidden drawer links
+            // are removed from the tab order on mobile.
+            sidebarOpen
+              ? 'visible translate-x-0 transition-transform'
+              : 'invisible -translate-x-full transition-[transform,visibility]'
+          }
         `}
       >
         <div className="flex h-full flex-col">
