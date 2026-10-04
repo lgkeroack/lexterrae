@@ -1,4 +1,5 @@
 import type {
+  User,
   AuthResponse,
   TokenRefreshResponse,
   LoginRequest,
@@ -45,7 +46,11 @@ function writeStorage(key: string, value: string | null): void {
 }
 
 let accessToken: string | null = readStorage(ACCESS_TOKEN_KEY);
+// The refresh token lives in an httpOnly cookie (`lt_refresh`) set by the API.
+// We no longer persist it; any legacy value is used once (in memory) so
+// existing sessions keep working, then removed from storage.
 let refreshToken: string | null = readStorage(REFRESH_TOKEN_KEY);
+writeStorage(REFRESH_TOKEN_KEY, null);
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
@@ -57,8 +62,8 @@ export function getAccessToken(): string | null {
 }
 
 export function setRefreshToken(token: string | null): void {
+  // In-memory only (body fallback for older API builds); the cookie is authoritative.
   refreshToken = token;
-  writeStorage(REFRESH_TOKEN_KEY, token);
 }
 
 export function getRefreshToken(): string | null {
@@ -79,7 +84,6 @@ export function clearTokens(): void {
 /** Re-read tokens from storage (another tab may have rotated them). */
 export function syncTokensFromStorage(): void {
   accessToken = readStorage(ACCESS_TOKEN_KEY);
-  refreshToken = readStorage(REFRESH_TOKEN_KEY);
 }
 
 /** Returns the access token's expiry in ms since epoch, or null if it can't be decoded. */
@@ -202,7 +206,7 @@ let refreshPromise: Promise<string> | null = null;
 
 async function doRefresh(): Promise<string> {
   const tokenUsed = refreshToken;
-  if (!tokenUsed) throw makeError(401, 'Unauthorized');
+  const accessAtStart = readStorage(ACCESS_TOKEN_KEY);
 
   let response: Response;
   try {
@@ -213,7 +217,8 @@ async function doRefresh(): Promise<string> {
         'Content-Type': 'application/json',
         'X-Request-Id': generateRequestId(),
       },
-      body: JSON.stringify({ refreshToken: tokenUsed }),
+      // Cookie carries the token; send the in-memory one too if we have it.
+      body: JSON.stringify(tokenUsed ? { refreshToken: tokenUsed } : {}),
     });
   } catch {
     // Network failure: keep tokens so the session can recover once online.
@@ -223,12 +228,13 @@ async function doRefresh(): Promise<string> {
   if (!response.ok) {
     const error = await parseErrorResponse(response);
     // Another tab may have rotated the refresh token while we were waiting.
-    const stored = readStorage(REFRESH_TOKEN_KEY);
+    // Another tab may have refreshed (rotating the cookie) while we were waiting.
     const storedAccess = readStorage(ACCESS_TOKEN_KEY);
-    if (stored && stored !== tokenUsed && storedAccess) {
+    if (storedAccess && storedAccess !== accessAtStart) {
       syncTokensFromStorage();
       return storedAccess;
     }
+    // Only definitive auth failures end the session; 5xx/503 (e.g. Redis outage) don't.
     if (response.status === 400 || response.status === 401 || response.status === 403) {
       clearTokens();
       notifyAuthFailure();
@@ -289,7 +295,7 @@ export async function authFetch(path: string, options: RequestInit = {}): Promis
   const tokenAtSend = accessToken;
   const response = await send(path, options, tokenAtSend);
 
-  if (response.status !== 401 || NO_REFRESH_PATHS.includes(path) || !refreshToken) {
+  if (response.status !== 401 || NO_REFRESH_PATHS.includes(path)) {
     return response;
   }
 
@@ -368,12 +374,18 @@ export const api = {
   async logout(): Promise<void> {
     const token = refreshToken;
     clearTokens();
-    if (!token) return;
     try {
-      await send('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken: token }) }, null);
+      // credentials: 'include' sends the httpOnly cookie, which the API revokes and clears.
+      await send('/auth/logout', { method: 'POST', body: JSON.stringify(token ? { refreshToken: token } : {}) }, null);
     } catch {
       // Ignore — local session is already cleared.
     }
+  },
+
+  /** Current user for the bearer token. */
+  async me(): Promise<User> {
+    const data = await request<{ user: User }>('/auth/me');
+    return data.user;
   },
 
   async refreshToken(): Promise<TokenRefreshResponse> {

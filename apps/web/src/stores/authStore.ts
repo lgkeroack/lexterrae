@@ -75,7 +75,8 @@ function isAccessTokenFresh(): boolean {
 
 function initialStatus(): AuthStatus {
   if (isAccessTokenFresh()) return 'authenticated';
-  if (getRefreshToken()) return 'checking';
+  // A previous session existed: try to restore it via the refresh cookie.
+  if (getAccessToken() || getRefreshToken() || readUser()) return 'checking';
   return 'unauthenticated';
 }
 
@@ -99,7 +100,7 @@ function clearRefreshTimer(): void {
 function scheduleRefresh(): void {
   clearRefreshTimer();
   const exp = getTokenExpiry();
-  if (exp === null || !getRefreshToken()) return;
+  if (exp === null) return;
   const delay = Math.max(exp - Date.now() - REFRESH_LEEWAY_MS, 0);
   refreshTimer = setTimeout(() => {
     useAuthStore
@@ -188,6 +189,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const token = await refreshAccessToken();
     set({ accessToken: token, status: 'authenticated', isAuthenticated: true });
     scheduleRefresh();
+    if (!get().user) {
+      // Restore the profile (e.g. storage was cleared but the cookie survived).
+      api
+        .me()
+        .then((user) => {
+          writeUser(user);
+          set({ user });
+        })
+        .catch(() => undefined);
+    }
   },
 
   initialize: () => {
@@ -231,10 +242,10 @@ if (initial === 'authenticated') scheduleRefresh();
 if (typeof window !== 'undefined') {
   // Keep tabs in sync: logging out (or rotating tokens) in one tab applies to all.
   window.addEventListener('storage', (event) => {
-    if (event.key !== 'accessToken' && event.key !== 'refreshToken' && event.key !== null) return;
+    if (event.key !== 'accessToken' && event.key !== null) return;
     syncTokensFromStorage();
     const token = getAccessToken();
-    if (!token && !getRefreshToken()) {
+    if (!token) {
       clearRefreshTimer();
       resetUserScopedStores();
       useAuthStore.setState({
