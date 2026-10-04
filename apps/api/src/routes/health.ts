@@ -12,7 +12,10 @@ const router: ReturnType<typeof Router> = Router();
 const CHECK_TIMEOUT_MS = 3_000;
 
 /** Runs a dependency probe with a timeout so a hung dependency cannot hang the health endpoint. */
-async function probe(name: string, check: (signal: AbortSignal) => Promise<unknown>): Promise<ServiceHealth> {
+async function probe(
+  name: string,
+  check: (signal: AbortSignal) => Promise<unknown>,
+): Promise<ServiceHealth> {
   const start = Date.now();
   const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;
@@ -45,7 +48,9 @@ router.get('/', async (_req, res) => {
   const [database, redisCheck, s3] = await Promise.all([
     probe('Database', () => prisma.$queryRaw`SELECT 1`),
     probe('Redis', () => redis.ping()),
-    probe('S3', (abortSignal) => s3Client.send(new HeadBucketCommand({ Bucket: env.S3_BUCKET }), { abortSignal })),
+    probe('S3', (abortSignal) =>
+      s3Client.send(new HeadBucketCommand({ Bucket: env.S3_BUCKET }), { abortSignal }),
+    ),
   ]);
 
   const checks = { database, redis: redisCheck, s3 };

@@ -14,7 +14,11 @@ const sizeClasses = {
   lg: 'h-12 w-12 border-4',
 };
 
-export function LoadingSpinner({ size = 'md', className = '', label = 'Loading' }: LoadingSpinnerProps) {
+export function LoadingSpinner({
+  size = 'md',
+  className = '',
+  label = 'Loading',
+}: LoadingSpinnerProps) {
   return (
     <div role="status" className={`inline-flex ${className}`.trim()}>
       <div

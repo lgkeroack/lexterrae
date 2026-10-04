@@ -76,9 +76,11 @@ export function RegisterForm() {
       errors.displayName = `Display name must be ${DISPLAY_NAME_MAX} characters or fewer.`;
     if (!mail) errors.email = 'Email is required.';
     else if (!EMAIL_RE.test(mail)) errors.email = 'Enter a valid email address.';
-    else if (mail.length > EMAIL_MAX) errors.email = `Email must be ${EMAIL_MAX} characters or fewer.`;
+    else if (mail.length > EMAIL_MAX)
+      errors.email = `Email must be ${EMAIL_MAX} characters or fewer.`;
     if (!password) errors.password = 'Password is required.';
-    else if (!allRequirementsMet) errors.password = 'Password does not meet all the requirements below.';
+    else if (!allRequirementsMet)
+      errors.password = 'Password does not meet all the requirements below.';
     if (!confirmPassword) errors.confirmPassword = 'Please confirm your password.';
     else if (confirmPassword !== password) errors.confirmPassword = 'Passwords do not match.';
     return errors;
@@ -221,7 +223,8 @@ export function RegisterForm() {
         autoComplete="new-password"
         error={
           fieldErrors.confirmPassword ??
-          (confirmPassword.length > 0 && confirmPassword !== password.slice(0, confirmPassword.length)
+          (confirmPassword.length > 0 &&
+          confirmPassword !== password.slice(0, confirmPassword.length)
             ? 'Passwords do not match.'
             : undefined)
         }

@@ -1,4 +1,10 @@
-import { Router, type Request, type Response, type NextFunction, type CookieOptions } from 'express';
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+  type CookieOptions,
+} from 'express';
 import rateLimit, { type Options as RateLimitOptions } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
@@ -70,7 +76,9 @@ const loginLimiter = rateLimit({
   legacyHeaders: false,
   // Only failed attempts count, so legitimate users are not locked out by normal use
   skipSuccessfulRequests: true,
-  handler: rateLimitHandler('Too many failed sign-in attempts. Please wait 15 minutes and try again.'),
+  handler: rateLimitHandler(
+    'Too many failed sign-in attempts. Please wait 15 minutes and try again.',
+  ),
 });
 
 /**

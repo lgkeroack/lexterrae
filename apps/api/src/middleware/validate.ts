@@ -24,7 +24,9 @@ export function validate(schemas: ValidationSchemas) {
       const result = schema.safeParse(input);
       if (!result.success) {
         // Prefix paths with the target so the client knows where the problem is (e.g. "body.email")
-        issues.push(...result.error.errors.map((issue) => ({ ...issue, path: [target, ...issue.path] })));
+        issues.push(
+          ...result.error.errors.map((issue) => ({ ...issue, path: [target, ...issue.path] })),
+        );
       } else {
         // Replace with parsed (and potentially transformed) data
         req[target] = result.data;

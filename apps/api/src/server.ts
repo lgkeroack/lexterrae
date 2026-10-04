@@ -128,7 +128,8 @@ server.on('error', (err: NodeJS.ErrnoException) => {
 prisma.$connect().catch((err: unknown) => {
   logger.error({
     module: 'server',
-    message: 'Could not connect to the database at startup. Check DATABASE_URL and that Postgres is running.',
+    message:
+      'Could not connect to the database at startup. Check DATABASE_URL and that Postgres is running.',
     error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
   });
 });
@@ -183,7 +184,10 @@ process.on('unhandledRejection', (reason) => {
   logger.error({
     module: 'server',
     message: 'Unhandled promise rejection',
-    error: reason instanceof Error ? { name: reason.name, message: reason.message, stack: reason.stack } : String(reason),
+    error:
+      reason instanceof Error
+        ? { name: reason.name, message: reason.message, stack: reason.stack }
+        : String(reason),
   });
 });
 

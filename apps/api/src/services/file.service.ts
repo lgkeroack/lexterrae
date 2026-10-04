@@ -10,7 +10,13 @@ import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { s3Client } from '../config/s3.js';
 import { env } from '../config/env.js';
-import { FileTypeError, InternalError, ValidationError } from '../lib/errors.js';
+import {
+  FileTypeError,
+  InternalError,
+  NotFoundError,
+  ServiceUnavailableError,
+  ValidationError,
+} from '../lib/errors.js';
 import { createModuleLogger } from '../lib/logger.js';
 
 const logger = createModuleLogger('file.service');
@@ -287,7 +293,9 @@ export class FileService {
         fileKey,
         error: err instanceof Error ? err.message : String(err),
       });
-      throw new InternalError('Failed to upload file to storage');
+      throw new ServiceUnavailableError(
+        'File storage is temporarily unavailable. Please try again shortly.',
+      );
     }
   }
 
@@ -314,7 +322,9 @@ export class FileService {
         fileKey,
         error: err instanceof Error ? err.message : String(err),
       });
-      throw new InternalError('Failed to delete file from storage');
+      throw new ServiceUnavailableError(
+        'File storage is temporarily unavailable. Please try again shortly.',
+      );
     }
   }
 
@@ -337,10 +347,11 @@ export class FileService {
       const target = localPath(fileKey);
       try {
         const info = await stat(target);
-        const contentType = (await readFile(`${target}.mime`, 'utf8').catch(() => '')) || 'application/octet-stream';
+        const contentType =
+          (await readFile(`${target}.mime`, 'utf8').catch(() => '')) || 'application/octet-stream';
         return { stream: createReadStream(target), contentType, contentLength: info.size };
       } catch {
-        throw new InternalError('Failed to retrieve file from storage');
+        throw new NotFoundError('File not found in storage');
       }
     }
     try {
@@ -362,12 +373,17 @@ export class FileService {
       };
     } catch (err) {
       if (err instanceof InternalError) throw err;
+      if (err instanceof Error && (err.name === 'NoSuchKey' || err.name === 'NotFound')) {
+        throw new NotFoundError('File not found in storage');
+      }
       logger.error({
         message: 'Failed to retrieve file from S3',
         fileKey,
         error: err instanceof Error ? err.message : String(err),
       });
-      throw new InternalError('Failed to retrieve file from storage');
+      throw new ServiceUnavailableError(
+        'File storage is temporarily unavailable. Please try again shortly.',
+      );
     }
   }
 }

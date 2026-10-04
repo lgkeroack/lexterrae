@@ -18,7 +18,10 @@ function toStringArray(value: unknown): unknown {
       return value; // let zod report the type error
     }
   }
-  return trimmed.split(',').map((v) => v.trim()).filter((v) => v.length > 0);
+  return trimmed
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
 }
 
 /** Treats empty query-string values (e.g. "?fileType=") as absent. */
@@ -118,7 +121,8 @@ export const documentQuerySchema = z
     ),
     jurisdictionId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
     fileType: z.preprocess(
-      (v) => (typeof v === 'string' ? emptyToUndefined(v.trim().toLowerCase().replace(/^\./, '')) : v),
+      (v) =>
+        typeof v === 'string' ? emptyToUndefined(v.trim().toLowerCase().replace(/^\./, '')) : v,
       z.enum(['pdf', 'txt', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'rtf', 'png', 'jpg']).optional(),
     ),
     sortBy: z.preprocess(

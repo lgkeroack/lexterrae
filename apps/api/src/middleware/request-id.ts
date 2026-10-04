@@ -14,7 +14,8 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
   const incoming = req.headers['x-request-id'];
-  const requestId = typeof incoming === 'string' && SAFE_REQUEST_ID.test(incoming) ? incoming : randomUUID();
+  const requestId =
+    typeof incoming === 'string' && SAFE_REQUEST_ID.test(incoming) ? incoming : randomUUID();
   req.requestId = requestId;
   res.setHeader('X-Request-Id', requestId);
   next();

@@ -23,7 +23,12 @@ export interface JurisdictionNode {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const LEVEL_ORDER: Record<string, number> = { federal: 0, provincial: 1, territorial: 2, municipal: 3 };
+const LEVEL_ORDER: Record<string, number> = {
+  federal: 0,
+  provincial: 1,
+  territorial: 2,
+  municipal: 3,
+};
 
 export class JurisdictionService {
   /**
@@ -211,9 +216,9 @@ export class JurisdictionService {
    * Resolves jurisdiction references (UUIDs or codes such as "BC" / "BC-VANCOUVER") to
    * jurisdiction records. Throws a ValidationError listing any that do not exist.
    */
-  async resolveJurisdictionRefs(refs: string[]): Promise<
-    { id: string; name: string; code: string; level: string }[]
-  > {
+  async resolveJurisdictionRefs(
+    refs: string[],
+  ): Promise<{ id: string; name: string; code: string; level: string }[]> {
     const uniqueRefs = [...new Set(refs)];
     const ids = uniqueRefs.filter((r) => UUID_RE.test(r)).map((r) => r.toLowerCase());
     const codes = uniqueRefs.filter((r) => !UUID_RE.test(r)).map((r) => r.toUpperCase());
@@ -230,7 +235,9 @@ export class JurisdictionService {
       ...codes.filter((c) => !foundCodes.has(c)),
     ];
     if (missing.length > 0) {
-      throw new ValidationError(`The following jurisdictions were not found: ${missing.join(', ')}`);
+      throw new ValidationError(
+        `The following jurisdictions were not found: ${missing.join(', ')}`,
+      );
     }
 
     // De-duplicate in case the same jurisdiction was referenced by both ID and code
@@ -241,9 +248,9 @@ export class JurisdictionService {
    * Batch lookup: validates that all provided IDs exist and returns the jurisdictions.
    * Throws a ValidationError if any IDs are not found.
    */
-  async getJurisdictionsByIds(ids: string[]): Promise<
-    { id: string; name: string; code: string; level: string }[]
-  > {
+  async getJurisdictionsByIds(
+    ids: string[],
+  ): Promise<{ id: string; name: string; code: string; level: string }[]> {
     if (ids.length === 0) {
       return [];
     }

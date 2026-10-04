@@ -74,9 +74,10 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, Er
 
   override render() {
     if (!this.state.error) return this.props.children;
-    const isChunkError = /dynamically imported module|Loading chunk|Importing a module script/i.test(
-      this.state.error.message,
-    );
+    const isChunkError =
+      /dynamically imported module|Loading chunk|Importing a module script/i.test(
+        this.state.error.message,
+      );
     return (
       <div role="alert" className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
         <div className="max-w-md rounded-lg bg-white p-8 text-center shadow-md">

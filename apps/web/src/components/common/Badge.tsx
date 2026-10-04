@@ -17,9 +17,7 @@ const levelColors: Record<JurisdictionLevel, string> = {
 };
 
 export function Badge({ label, level, onRemove, className = '' }: BadgeProps) {
-  const colorClass = level
-    ? levelColors[level]
-    : 'bg-gray-100 text-gray-800 border-gray-200';
+  const colorClass = level ? levelColors[level] : 'bg-gray-100 text-gray-800 border-gray-200';
 
   return (
     <span

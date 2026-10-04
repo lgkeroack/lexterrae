@@ -3,7 +3,10 @@ import { env } from '../config/env.js';
 
 export const logger = pino({
   level: env.NODE_ENV === 'production' ? 'info' : 'debug',
-  transport: env.NODE_ENV === 'development' ? { target: 'pino-pretty', options: { colorize: true } } : undefined,
+  transport:
+    env.NODE_ENV === 'development'
+      ? { target: 'pino-pretty', options: { colorize: true } }
+      : undefined,
   base: { service: 'api' },
   // SECURITY: Defence in depth — never emit credentials or tokens even if an object containing them is logged
   redact: {

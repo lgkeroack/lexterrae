@@ -27,7 +27,10 @@ interface BodyParserError extends Error {
 
 function isBodyParserError(err: Error): err is BodyParserError {
   const candidate = err as BodyParserError;
-  return typeof candidate.type === 'string' && typeof (candidate.status ?? candidate.statusCode) === 'number';
+  return (
+    typeof candidate.type === 'string' &&
+    typeof (candidate.status ?? candidate.statusCode) === 'number'
+  );
 }
 
 function titleFromCode(code: string): string {
@@ -69,11 +72,15 @@ function normalizeError(err: Error): Error {
   if (err instanceof MulterError) {
     switch (err.code) {
       case 'LIMIT_FILE_SIZE':
-        return new FileSizeError(`File exceeds the maximum allowed size of ${env.MAX_FILE_SIZE_MB} MB`);
+        return new FileSizeError(
+          `File exceeds the maximum allowed size of ${env.MAX_FILE_SIZE_MB} MB`,
+        );
       case 'LIMIT_FILE_COUNT':
         return new ValidationError('Only one file can be uploaded at a time');
       case 'LIMIT_UNEXPECTED_FILE':
-        return new ValidationError(`Unexpected file field "${err.field ?? ''}". Upload the file in the "file" field`);
+        return new ValidationError(
+          `Unexpected file field "${err.field ?? ''}". Upload the file in the "file" field`,
+        );
       default:
         return new ValidationError(err.message);
     }
@@ -93,7 +100,9 @@ function normalizeError(err: Error): Error {
   }
 
   if (err instanceof Prisma.PrismaClientInitializationError) {
-    return new ServiceUnavailableError('The database is currently unavailable. Please try again shortly.');
+    return new ServiceUnavailableError(
+      'The database is currently unavailable. Please try again shortly.',
+    );
   }
 
   return err;

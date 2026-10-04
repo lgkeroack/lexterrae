@@ -17,7 +17,12 @@ import {
   Upload,
 } from 'lucide-react';
 import { useDocumentStore } from '../../stores/documentStore';
-import type { DocumentQueryParams, DocumentWithJurisdictions, FileType, JurisdictionLevel } from '@lexterrae/shared';
+import type {
+  DocumentQueryParams,
+  DocumentWithJurisdictions,
+  FileType,
+  JurisdictionLevel,
+} from '@lexterrae/shared';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
@@ -30,7 +35,19 @@ type SortOrder = NonNullable<DocumentQueryParams['sortOrder']>;
 
 const SORT_FIELDS: SortField[] = ['title', 'uploaded_at', 'file_size_bytes'];
 const LEVELS: JurisdictionLevel[] = ['federal', 'provincial', 'territorial', 'municipal'];
-const FILE_TYPES: FileType[] = ['pdf', 'txt'];
+const FILE_TYPE_LABELS: Record<FileType, string> = {
+  pdf: 'PDF',
+  doc: 'Word (.doc)',
+  docx: 'Word (.docx)',
+  xls: 'Excel (.xls)',
+  xlsx: 'Excel (.xlsx)',
+  csv: 'CSV',
+  rtf: 'Rich text (.rtf)',
+  txt: 'Text',
+  png: 'PNG image',
+  jpg: 'JPEG image',
+};
+const FILE_TYPES = Object.keys(FILE_TYPE_LABELS) as FileType[];
 const PAGE_SIZES = [10, 20, 50, 100];
 const DEFAULT_PAGE_SIZE = 20;
 const DEFAULT_SORT: SortField = 'uploaded_at';
@@ -39,7 +56,9 @@ const SEARCH_DEBOUNCE_MS = 300;
 const MAX_SEARCH_LENGTH = 200;
 
 /** Parse and sanitise list params from the URL so shared/back-forward links work. */
-function parseParams(sp: URLSearchParams): Required<Pick<DocumentQueryParams, 'page' | 'pageSize' | 'sortBy' | 'sortOrder'>> &
+function parseParams(
+  sp: URLSearchParams,
+): Required<Pick<DocumentQueryParams, 'page' | 'pageSize' | 'sortBy' | 'sortOrder'>> &
   Pick<DocumentQueryParams, 'search' | 'jurisdictionLevel' | 'fileType'> {
   const page = Number.parseInt(sp.get('page') ?? '', 10);
   const pageSize = Number.parseInt(sp.get('pageSize') ?? '', 10);
@@ -60,7 +79,8 @@ function parseParams(sp: URLSearchParams): Required<Pick<DocumentQueryParams, 'p
 }
 
 function FileIcon({ type }: { type: string }) {
-  if (type === 'pdf') return <FileText className="h-5 w-5 flex-shrink-0 text-red-500" aria-hidden="true" />;
+  if (type === 'pdf')
+    return <FileText className="h-5 w-5 flex-shrink-0 text-red-500" aria-hidden="true" />;
   return <File className="h-5 w-5 flex-shrink-0 text-blue-500" aria-hidden="true" />;
 }
 
@@ -166,7 +186,10 @@ export function DocumentList() {
   // If deletions/filters leave us past the last page, step back.
   useEffect(() => {
     if (!isLoading && !error && pagination.totalPages > 0 && params.page > pagination.totalPages) {
-      updateParams({ page: pagination.totalPages === 1 ? null : pagination.totalPages }, { replace: true });
+      updateParams(
+        { page: pagination.totalPages === 1 ? null : pagination.totalPages },
+        { replace: true },
+      );
     }
   }, [isLoading, error, pagination.totalPages, params.page, updateParams]);
 
@@ -201,8 +224,12 @@ export function DocumentList() {
     const isSameField = params.sortBy === field;
     // New field: text sorts A→Z first, dates/sizes newest/largest first.
     const newOrder: SortOrder = isSameField
-      ? params.sortOrder === 'asc' ? 'desc' : 'asc'
-      : field === 'title' ? 'asc' : 'desc';
+      ? params.sortOrder === 'asc'
+        ? 'desc'
+        : 'asc'
+      : field === 'title'
+        ? 'asc'
+        : 'desc';
     updateParams({ sortBy: field, sortOrder: newOrder, page: null });
   };
 
@@ -266,7 +293,10 @@ export function DocumentList() {
           className="inline-flex items-center gap-1 rounded hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
           {label}
-          <Icon className={`h-3.5 w-3.5 ${active ? 'text-gray-900' : 'text-gray-400'}`} aria-hidden="true" />
+          <Icon
+            className={`h-3.5 w-3.5 ${active ? 'text-gray-900' : 'text-gray-400'}`}
+            aria-hidden="true"
+          />
           {active && (
             <span className="sr-only">
               {params.sortOrder === 'asc' ? '(sorted ascending)' : '(sorted descending)'}
@@ -277,7 +307,8 @@ export function DocumentList() {
     );
   };
 
-  const rangeStart = pagination.totalItems === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+  const rangeStart =
+    pagination.totalItems === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
   const rangeEnd = Math.min(rangeStart + documents.length - 1, pagination.totalItems);
   const showSkeleton = isLoading && (!hasLoaded || documents.length === 0) && !error;
   const showError = Boolean(error) && !isLoading;
@@ -293,7 +324,10 @@ export function DocumentList() {
             Search documents
           </label>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+              aria-hidden="true"
+            />
             <input
               id="document-search"
               type="search"
@@ -323,7 +357,9 @@ export function DocumentList() {
           <select
             id="filter-level"
             value={params.jurisdictionLevel ?? ''}
-            onChange={(e) => updateParams({ jurisdictionLevel: e.target.value || null, page: null })}
+            onChange={(e) =>
+              updateParams({ jurisdictionLevel: e.target.value || null, page: null })
+            }
             className={selectClass}
           >
             <option value="">All jurisdictions</option>
@@ -342,8 +378,11 @@ export function DocumentList() {
             className={selectClass}
           >
             <option value="">All file types</option>
-            <option value="pdf">PDF</option>
-            <option value="txt">Text</option>
+            {FILE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {FILE_TYPE_LABELS[type]}
+              </option>
+            ))}
           </select>
           {/* Sort control for the card layout, where there are no column headers */}
           <label htmlFor="sort-mobile" className="sr-only">
@@ -408,11 +447,18 @@ export function DocumentList() {
 
       {/* Live region announcing result counts */}
       <p className="sr-only" aria-live="polite">
-        {isLoading ? 'Loading documents' : hasLoaded && !error ? `${pagination.totalItems} documents found` : ''}
+        {isLoading
+          ? 'Loading documents'
+          : hasLoaded && !error
+            ? `${pagination.totalItems} ${pagination.totalItems === 1 ? 'document' : 'documents'} found`
+            : ''}
       </p>
 
       {showError && (
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center">
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-8 text-center"
+        >
           <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-400" aria-hidden="true" />
           <p className="mb-4 text-sm text-red-700">{error}</p>
           <Button variant="secondary" size="sm" onClick={refetch}>
@@ -423,7 +469,10 @@ export function DocumentList() {
       )}
 
       {showSkeleton && (
-        <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-4" aria-hidden="true">
+        <div
+          className="space-y-2 rounded-lg border border-gray-200 bg-white p-4"
+          aria-hidden="true"
+        >
           {Array.from({ length: 5 }, (_, i) => (
             <div key={i} className="flex animate-pulse items-center gap-4 py-2">
               <div className="h-4 w-4 rounded bg-gray-200" />
@@ -444,8 +493,11 @@ export function DocumentList() {
               <p className="mb-4 text-sm text-gray-500">
                 {params.search ? (
                   <>
-                    Nothing matches <span className="font-medium text-gray-700">&ldquo;{params.search}&rdquo;</span>
-                    {params.jurisdictionLevel || params.fileType ? ' with the current filters.' : '.'}
+                    Nothing matches{' '}
+                    <span className="font-medium text-gray-700">&ldquo;{params.search}&rdquo;</span>
+                    {params.jurisdictionLevel || params.fileType
+                      ? ' with the current filters.'
+                      : '.'}
                   </>
                 ) : (
                   'No documents match the current filters.'
@@ -458,7 +510,9 @@ export function DocumentList() {
           ) : (
             <>
               <h2 className="mb-1 text-lg font-medium text-gray-900">No documents yet</h2>
-              <p className="mb-4 text-sm text-gray-500">Upload your first document to get started.</p>
+              <p className="mb-4 text-sm text-gray-500">
+                Upload your first document to get started.
+              </p>
               <Link
                 to="/upload"
                 className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
@@ -509,7 +563,8 @@ export function DocumentList() {
                       </Link>
                     </div>
                     <p className="mt-1 text-xs text-gray-500">
-                      <span className="uppercase">{doc.fileType}</span> &middot; {formatFileSize(doc.fileSizeBytes)} &middot;{' '}
+                      <span className="uppercase">{doc.fileType}</span> &middot;{' '}
+                      {formatFileSize(doc.fileSizeBytes)} &middot;{' '}
                       <time dateTime={toISODate(doc.uploadedAt)}>{formatDate(doc.uploadedAt)}</time>
                     </p>
                     <div className="mt-2">
@@ -534,7 +589,8 @@ export function DocumentList() {
           <div className="hidden overflow-x-auto rounded-lg border border-gray-200 bg-white md:block">
             <table className="w-full table-fixed text-sm">
               <caption className="sr-only">
-                Documents, sorted by {params.sortBy.replace(/_/g, ' ')} {params.sortOrder === 'asc' ? 'ascending' : 'descending'}
+                Documents, sorted by {params.sortBy.replace(/_/g, ' ')}{' '}
+                {params.sortOrder === 'asc' ? 'ascending' : 'descending'}
               </caption>
               <colgroup>
                 <col className="w-12" />
@@ -615,7 +671,9 @@ export function DocumentList() {
                     <td className="whitespace-nowrap px-4 py-3 text-gray-600">
                       <time dateTime={toISODate(doc.uploadedAt)}>{formatDate(doc.uploadedAt)}</time>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-gray-600">{formatFileSize(doc.fileSizeBytes)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                      {formatFileSize(doc.fileSizeBytes)}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
@@ -682,7 +740,9 @@ export function DocumentList() {
               {Array.from({ length: pagination.totalPages }, (_, i) => i + 1)
                 .filter(
                   (page) =>
-                    page === 1 || page === pagination.totalPages || Math.abs(page - pagination.page) <= 1,
+                    page === 1 ||
+                    page === pagination.totalPages ||
+                    Math.abs(page - pagination.page) <= 1,
                 )
                 .map((page, idx, arr) => (
                   <React.Fragment key={page}>
@@ -697,7 +757,9 @@ export function DocumentList() {
                       aria-label={`Page ${page}`}
                       aria-current={page === pagination.page ? 'page' : undefined}
                       className={`h-8 min-w-[32px] rounded-md px-2 text-sm ${
-                        page === pagination.page ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-100'
+                        page === pagination.page
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-700 hover:bg-gray-100'
                       }`}
                     >
                       {page}
@@ -724,11 +786,16 @@ export function DocumentList() {
         title="Delete documents"
       >
         <p className="mb-4 text-sm text-gray-600">
-          Delete {selectedIds.size} selected document{selectedIds.size === 1 ? '' : 's'}? They will be moved to trash and
-          permanently deleted after 30 days.
+          Delete {selectedIds.size} selected document{selectedIds.size === 1 ? '' : 's'}? They will
+          be moved to trash and permanently deleted after 30 days.
         </p>
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setShowBulkDelete(false)} disabled={isBulkDeleting}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowBulkDelete(false)}
+            disabled={isBulkDeleting}
+          >
             Cancel
           </Button>
           <Button variant="danger" size="sm" onClick={handleBulkDelete} isLoading={isBulkDeleting}>

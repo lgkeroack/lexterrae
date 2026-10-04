@@ -18,7 +18,15 @@ const chipColors: Record<JurisdictionSelection['level'], string> = {
  * inside the upload <form>: the remove control must be type="button" so it never submits
  * the form or becomes the form's implicit-submission default button.
  */
-function SelectionChip({ selection, label, onRemove }: { selection: JurisdictionSelection; label: string; onRemove: () => void }) {
+function SelectionChip({
+  selection,
+  label,
+  onRemove,
+}: {
+  selection: JurisdictionSelection;
+  label: string;
+  onRemove: () => void;
+}) {
   return (
     <li
       className={`inline-flex items-center gap-1 rounded-full border py-0.5 pl-2.5 pr-1 text-xs font-medium ${chipColors[selection.level]}`}
@@ -56,10 +64,18 @@ export function JurisdictionSummary() {
   const totalCount = selections.length;
   const overLimit = totalCount > MAX_JURISDICTION_SELECTIONS;
 
-  const groups: { title: string; items: JurisdictionSelection[]; label: (s: JurisdictionSelection) => string }[] = [
+  const groups: {
+    title: string;
+    items: JurisdictionSelection[];
+    label: (s: JurisdictionSelection) => string;
+  }[] = [
     { title: 'Federal', items: grouped.federal, label: (s) => s.name },
     { title: 'Provincial / Territorial', items: grouped.provincial, label: (s) => s.name },
-    { title: 'Municipal', items: grouped.municipal, label: (s) => (s.parentName ? `${s.name}, ${s.parentName}` : s.name) },
+    {
+      title: 'Municipal',
+      items: grouped.municipal,
+      label: (s) => (s.parentName ? `${s.name}, ${s.parentName}` : s.name),
+    },
   ];
 
   return (
@@ -69,7 +85,11 @@ export function JurisdictionSummary() {
           Selected jurisdictions
           <span
             className={`ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-xs font-medium ${
-              overLimit ? 'bg-red-600 text-white' : totalCount > 0 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+              overLimit
+                ? 'bg-red-600 text-white'
+                : totalCount > 0
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 text-gray-700'
             }`}
           >
             {totalCount}/{MAX_JURISDICTION_SELECTIONS}
@@ -97,14 +117,21 @@ export function JurisdictionSummary() {
             (g) =>
               g.items.length > 0 && (
                 <div key={g.title}>
-                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">{g.title}</p>
+                  <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">
+                    {g.title}
+                  </p>
                   <ul className="flex flex-wrap gap-1.5" aria-label={g.title}>
                     {g.items.map((s) => (
-                      <SelectionChip key={s.id} selection={s} label={g.label(s)} onRemove={() => removeSelection(s.id)} />
+                      <SelectionChip
+                        key={s.id}
+                        selection={s}
+                        label={g.label(s)}
+                        onRemove={() => removeSelection(s.id)}
+                      />
                     ))}
                   </ul>
                 </div>
-              )
+              ),
           )}
         </div>
       )}
@@ -112,7 +139,8 @@ export function JurisdictionSummary() {
       {overLimit && (
         <p className="mt-3 text-xs font-medium text-red-600">
           A document can be tagged with at most {MAX_JURISDICTION_SELECTIONS} jurisdictions. Remove{' '}
-          {totalCount - MAX_JURISDICTION_SELECTIONS}, or select an entire province instead of many of its municipalities.
+          {totalCount - MAX_JURISDICTION_SELECTIONS}, or select an entire province instead of many
+          of its municipalities.
         </p>
       )}
     </div>

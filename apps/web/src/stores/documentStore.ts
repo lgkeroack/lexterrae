@@ -33,8 +33,14 @@ interface DocumentState {
   uploadError: string | null;
   fetchDocuments: (params?: DocumentQueryParams) => Promise<void>;
   fetchDocument: (id: string) => Promise<void>;
-  uploadDocument: (file: File, metadata: { title: string; description?: string; tags?: string[]; jurisdictionIds: string[] }) => Promise<void>;
-  updateDocument: (id: string, updates: DocumentUpdateRequest) => Promise<DocumentWithJurisdictions>;
+  uploadDocument: (
+    file: File,
+    metadata: { title: string; description?: string; tags?: string[]; jurisdictionIds: string[] },
+  ) => Promise<void>;
+  updateDocument: (
+    id: string,
+    updates: DocumentUpdateRequest,
+  ) => Promise<DocumentWithJurisdictions>;
   deleteDocument: (id: string) => Promise<void>;
   downloadDocument: (id: string, filename: string) => Promise<void>;
   setQueryParams: (params: Partial<DocumentQueryParams>) => void;
@@ -221,8 +227,19 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       metadata.jurisdictionIds.forEach((jid) => formData.append('jurisdictionIds[]', jid));
       const xhr = new XMLHttpRequest();
       await new Promise<void>((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (e) => { if (e.lengthComputable) set({ uploadProgress: Math.round((e.loaded / e.total) * 100) }); });
-        xhr.addEventListener('load', () => { if (xhr.status >= 200 && xhr.status < 300) resolve(); else { try { reject(new Error(JSON.parse(xhr.responseText).detail || 'Upload failed')); } catch { reject(new Error('Upload failed')); } } });
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) set({ uploadProgress: Math.round((e.loaded / e.total) * 100) });
+        });
+        xhr.addEventListener('load', () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else {
+            try {
+              reject(new Error(JSON.parse(xhr.responseText).detail || 'Upload failed'));
+            } catch {
+              reject(new Error('Upload failed'));
+            }
+          }
+        });
         xhr.addEventListener('error', () => reject(new Error('Upload failed')));
         xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
         // API route is POST /api/documents (there is no /upload sub-route).
@@ -233,7 +250,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       });
       set({ isUploading: false, uploadProgress: 100 });
     } catch (err) {
-      set({ uploadError: err instanceof Error ? err.message : 'Upload failed', isUploading: false, uploadProgress: 0 });
+      set({
+        uploadError: err instanceof Error ? err.message : 'Upload failed',
+        isUploading: false,
+        uploadProgress: 0,
+      });
       throw err;
     }
   },
@@ -265,7 +286,9 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         currentDocument: merged ?? currentDocument,
         documents: documents.map(merge),
       });
-      return merged ?? normalizeDocument({ ...(prevCurrent as DocumentWithJurisdictions), ...serverDoc });
+      return (
+        merged ?? normalizeDocument({ ...(prevCurrent as DocumentWithJurisdictions), ...serverDoc })
+      );
     } catch (err) {
       // Roll back
       set({
@@ -289,7 +312,10 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         : prevPagination,
     });
     try {
-      const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, { method: 'DELETE', headers: getAuthHeaders() });
+      const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+      });
       if (!res.ok) throw new Error(await readErrorMessage(res, 'Delete failed'));
       if (get().currentDocument?.id === id) set({ currentDocument: null });
     } catch (err) {

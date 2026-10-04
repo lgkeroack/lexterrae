@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ProvinceData, MunicipalityData, JurisdictionTreeNode } from '@lexterrae/shared';
+import { MAX_JURISDICTIONS_PER_DOCUMENT } from '@lexterrae/shared';
 import { api, getErrorMessage } from '../services/api';
 import { PROVINCES, FEDERAL_CODE } from '../data/provinces';
 
@@ -15,8 +16,8 @@ export interface JurisdictionSelection {
   parentName?: string;
 }
 
-/** The API rejects uploads tagged with more than this many jurisdictions. */
-export const MAX_JURISDICTION_SELECTIONS = 10;
+/** The API rejects uploads tagged with more than this many jurisdictions (shared constant). */
+export const MAX_JURISDICTION_SELECTIONS = MAX_JURISDICTIONS_PER_DOCUMENT;
 
 interface JurisdictionState {
   provinces: ProvinceData[];
@@ -78,7 +79,9 @@ function buildFromTree(tree: JurisdictionTreeNode[]): {
       name: p.name,
       code: p.code,
       level: p.level as 'provincial' | 'territorial',
-      legalSystem: (p.legalSystem === 'civil_law' ? 'civil_law' : 'common_law') as ProvinceData['legalSystem'],
+      legalSystem: (p.legalSystem === 'civil_law'
+        ? 'civil_law'
+        : 'common_law') as ProvinceData['legalSystem'],
       municipalities: (p.children ?? [])
         .filter((c) => c.level === 'municipal')
         .map((c) => ({ name: c.name, code: c.code }))
@@ -111,7 +114,8 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
       try {
         const tree = await api.getJurisdictions();
         const { provinces, idByCode } = buildFromTree(Array.isArray(tree) ? tree : []);
-        if (provinces.length === 0) throw new Error('No jurisdictions are configured on the server.');
+        if (provinces.length === 0)
+          throw new Error('No jurisdictions are configured on the server.');
         // Drop any selection that no longer exists in the authoritative data.
         const selections = get().selections.filter((s) => idByCode[s.id]);
         set({
@@ -137,7 +141,10 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
   toggleFederal: () => {
     const { isFederalSelected, selections } = get();
     if (isFederalSelected) {
-      set({ isFederalSelected: false, selections: selections.filter((s) => s.level !== 'federal') });
+      set({
+        isFederalSelected: false,
+        selections: selections.filter((s) => s.level !== 'federal'),
+      });
     } else {
       set({ isFederalSelected: true, selections: [FEDERAL_SELECTION, ...selections] });
     }
@@ -178,7 +185,9 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
     } else {
       // Selecting the whole province supersedes individual municipality picks.
       const withoutMunis = selections.filter((s) => s.parentCode !== code);
-      set({ selections: [...withoutMunis, { id: code, name: province.name, level: province.level }] });
+      set({
+        selections: [...withoutMunis, { id: code, name: province.name, level: province.level }],
+      });
     }
   },
 
@@ -186,7 +195,10 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
     const { selections } = get();
     const target = selections.find((s) => s.id === id);
     if (target?.level === 'federal') {
-      set({ isFederalSelected: false, selections: selections.filter((s) => s.level !== 'federal') });
+      set({
+        isFederalSelected: false,
+        selections: selections.filter((s) => s.level !== 'federal'),
+      });
     } else {
       set({ selections: selections.filter((s) => s.id !== id && s.parentCode !== id) });
     }

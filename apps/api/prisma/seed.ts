@@ -116,26 +116,14 @@ export async function main() {
       code: 'SK',
       level: 'provincial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Regina',
-        'Saskatoon',
-        'Prince Albert',
-        'Moose Jaw',
-        'Swift Current',
-      ],
+      municipalities: ['Regina', 'Saskatoon', 'Prince Albert', 'Moose Jaw', 'Swift Current'],
     },
     {
       name: 'Manitoba',
       code: 'MB',
       level: 'provincial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Winnipeg',
-        'Brandon',
-        'Thompson',
-        'Steinbach',
-        'Portage la Prairie',
-      ],
+      municipalities: ['Winnipeg', 'Brandon', 'Thompson', 'Steinbach', 'Portage la Prairie'],
     },
     {
       name: 'Ontario',
@@ -180,38 +168,21 @@ export async function main() {
       code: 'NB',
       level: 'provincial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Fredericton',
-        'Saint John',
-        'Moncton',
-        'Dieppe',
-        'Riverview',
-      ],
+      municipalities: ['Fredericton', 'Saint John', 'Moncton', 'Dieppe', 'Riverview'],
     },
     {
       name: 'Nova Scotia',
       code: 'NS',
       level: 'provincial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Halifax',
-        'Cape Breton',
-        'Dartmouth',
-        'Truro',
-        'New Glasgow',
-      ],
+      municipalities: ['Halifax', 'Cape Breton', 'Dartmouth', 'Truro', 'New Glasgow'],
     },
     {
       name: 'Prince Edward Island',
       code: 'PE',
       level: 'provincial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Charlottetown',
-        'Summerside',
-        'Stratford',
-        'Cornwall',
-      ],
+      municipalities: ['Charlottetown', 'Summerside', 'Stratford', 'Cornwall'],
     },
     {
       name: 'Newfoundland and Labrador',
@@ -231,32 +202,21 @@ export async function main() {
       code: 'YT',
       level: 'territorial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Whitehorse',
-        'Dawson City',
-      ],
+      municipalities: ['Whitehorse', 'Dawson City'],
     },
     {
       name: 'Northwest Territories',
       code: 'NT',
       level: 'territorial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Yellowknife',
-        'Hay River',
-        'Inuvik',
-      ],
+      municipalities: ['Yellowknife', 'Hay River', 'Inuvik'],
     },
     {
       name: 'Nunavut',
       code: 'NU',
       level: 'territorial',
       legalSystem: 'common_law',
-      municipalities: [
-        'Iqaluit',
-        'Rankin Inlet',
-        'Arviat',
-      ],
+      municipalities: ['Iqaluit', 'Rankin Inlet', 'Arviat'],
     },
   ];
 
@@ -270,7 +230,9 @@ export async function main() {
       legalSystem: pt.legalSystem,
       geoCode: `CA-${pt.code}`,
     });
-    console.log(`  ${pt.level === 'provincial' ? 'Province' : 'Territory'}: ${parent.name} (${parent.code})`);
+    console.log(
+      `  ${pt.level === 'provincial' ? 'Province' : 'Territory'}: ${parent.name} (${parent.code})`,
+    );
 
     // Upsert each municipality within this province / territory
     for (const cityName of pt.municipalities) {
@@ -305,7 +267,9 @@ export async function main() {
     await redis.del('jurisdictions:tree');
     console.log('Cleared cached jurisdiction tree.');
   } catch {
-    console.warn('Could not clear jurisdiction tree cache (Redis unavailable); it expires within 24h.');
+    console.warn(
+      'Could not clear jurisdiction tree cache (Redis unavailable); it expires within 24h.',
+    );
   } finally {
     redis.disconnect();
   }

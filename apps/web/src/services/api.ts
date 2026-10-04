@@ -71,7 +71,10 @@ export function getRefreshToken(): string | null {
 }
 
 /** Set both tokens at once (e.g. after login). */
-export function setTokens(tokens: { accessToken: string | null; refreshToken?: string | null }): void {
+export function setTokens(tokens: {
+  accessToken: string | null;
+  refreshToken?: string | null;
+}): void {
   setAccessToken(tokens.accessToken);
   if (tokens.refreshToken !== undefined) setRefreshToken(tokens.refreshToken);
 }
@@ -132,8 +135,7 @@ export class ApiError extends Error {
   }
 }
 
-const NETWORK_ERROR_MESSAGE =
-  'Unable to reach the server. Check your connection and try again.';
+const NETWORK_ERROR_MESSAGE = 'Unable to reach the server. Check your connection and try again.';
 
 function fallbackMessage(status: number, statusText: string): string {
   if (status === 401) return 'Your session has expired. Please sign in again.';
@@ -193,7 +195,10 @@ export async function parseErrorResponse(response: Response): Promise<ApiError> 
 }
 
 /** Extract a user-facing message from any thrown value. */
-export function getErrorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
+export function getErrorMessage(
+  err: unknown,
+  fallback = 'Something went wrong. Please try again.',
+): string {
   if (err instanceof ApiError) return err.message;
   if (err instanceof TypeError) return NETWORK_ERROR_MESSAGE;
   if (err instanceof Error && err.message) return err.message;
@@ -320,7 +325,11 @@ async function parseJson<T>(response: Response): Promise<T> {
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw makeError(response.status, response.statusText, 'The server returned an unexpected response.');
+    throw makeError(
+      response.status,
+      response.statusText,
+      'The server returned an unexpected response.',
+    );
   }
 }
 
@@ -356,11 +365,7 @@ export const api = {
     return data;
   },
 
-  async register(
-    email: string,
-    password: string,
-    displayName: string,
-  ): Promise<AuthResponse> {
+  async register(email: string, password: string, displayName: string): Promise<AuthResponse> {
     const body: RegisterRequest = { email, password, displayName };
     const data = await request<AuthResponseWithRefresh>('/auth/register', {
       method: 'POST',
@@ -376,7 +381,11 @@ export const api = {
     clearTokens();
     try {
       // credentials: 'include' sends the httpOnly cookie, which the API revokes and clears.
-      await send('/auth/logout', { method: 'POST', body: JSON.stringify(token ? { refreshToken: token } : {}) }, null);
+      await send(
+        '/auth/logout',
+        { method: 'POST', body: JSON.stringify(token ? { refreshToken: token } : {}) },
+        null,
+      );
     } catch {
       // Ignore — local session is already cleared.
     }
@@ -395,9 +404,7 @@ export const api = {
 
   // ── Documents ─────────────────────────────────────────────────────
 
-  async getDocuments(
-    params: DocumentQueryParams = {},
-  ): Promise<PaginatedResponse<Document>> {
+  async getDocuments(params: DocumentQueryParams = {}): Promise<PaginatedResponse<Document>> {
     const qs = buildQueryString(params as Record<string, unknown>);
     return request<PaginatedResponse<Document>>(`/documents${qs}`);
   },
@@ -406,10 +413,7 @@ export const api = {
     return request<DocumentWithJurisdictions>(`/documents/${encodeURIComponent(id)}`);
   },
 
-  async uploadDocument(
-    file: File,
-    metadata: DocumentUploadRequest,
-  ): Promise<Document> {
+  async uploadDocument(file: File, metadata: DocumentUploadRequest): Promise<Document> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('title', metadata.title);
@@ -427,10 +431,7 @@ export const api = {
     return res.data;
   },
 
-  async updateDocument(
-    id: string,
-    updates: DocumentUpdateRequest,
-  ): Promise<Document> {
+  async updateDocument(id: string, updates: DocumentUpdateRequest): Promise<Document> {
     return request<Document>(`/documents/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),

@@ -14,6 +14,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { DocumentWithJurisdictions } from '@lexterrae/shared';
+import { MAX_DESCRIPTION_LENGTH } from '@lexterrae/shared';
 import { useDocumentStore, fetchDocumentBlob } from '../../stores/documentStore';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
@@ -26,7 +27,7 @@ interface DocumentDetailProps {
 }
 
 const MAX_TITLE = 255;
-const MAX_DESCRIPTION = 5000;
+const MAX_DESCRIPTION = MAX_DESCRIPTION_LENGTH;
 const MAX_TAGS = 20;
 const MAX_TAG_LENGTH = 50;
 
@@ -55,7 +56,11 @@ function useBackTarget(): string {
  * and `X-Frame-Options: DENY`, so it cannot be embedded directly.
  */
 function usePdfPreview(documentId: string, enabled: boolean) {
-  const [state, setState] = useState<{ url: string | null; error: string | null; loading: boolean }>({
+  const [state, setState] = useState<{
+    url: string | null;
+    error: string | null;
+    loading: boolean;
+  }>({
     url: null,
     error: null,
     loading: false,
@@ -77,7 +82,11 @@ function usePdfPreview(documentId: string, enabled: boolean) {
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
-        setState({ url: null, error: err instanceof Error ? err.message : 'Preview failed', loading: false });
+        setState({
+          url: null,
+          error: err instanceof Error ? err.message : 'Preview failed',
+          loading: false,
+        });
       });
     return () => {
       controller.abort();
@@ -229,7 +238,10 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
     return (
       <div className="space-y-6">
         {backLink}
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-10 text-center">
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-10 text-center"
+        >
           <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-400" aria-hidden="true" />
           <p className="mb-4 text-red-700">{detailError}</p>
           <div className="flex justify-center gap-2">
@@ -329,26 +341,54 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
         <div className="flex flex-shrink-0 flex-wrap gap-2">
           {isEditing ? (
             <>
-              <Button type="submit" variant="primary" size="sm" isLoading={isSaving} disabled={!canSave}>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                isLoading={isSaving}
+                disabled={!canSave}
+              >
                 {!isSaving && <Save className="h-4 w-4" />}
                 Save
               </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={handleCancelEdit} disabled={isSaving}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+              >
                 <X className="h-4 w-4" />
                 Cancel
               </Button>
             </>
           ) : (
             <>
-              <Button type="button" variant="secondary" size="sm" onClick={() => setIsEditing(true)}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsEditing(true)}
+              >
                 <Edit3 className="h-4 w-4" />
                 Edit
               </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={handleDownload} isLoading={isDownloading}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={handleDownload}
+                isLoading={isDownloading}
+              >
                 {!isDownloading && <Download className="h-4 w-4" />}
                 Download
               </Button>
-              <Button type="button" variant="danger" size="sm" onClick={() => setShowDeleteModal(true)}>
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={() => setShowDeleteModal(true)}
+              >
                 <Trash2 className="h-4 w-4" />
                 Delete
               </Button>
@@ -359,13 +399,23 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
 
       {/* Jurisdiction breadcrumbs */}
       {jurisdictionBreadcrumbs.length > 0 && (
-        <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm" aria-label="Jurisdiction paths">
+        <ul
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+          aria-label="Jurisdiction paths"
+        >
           {jurisdictionBreadcrumbs.map((crumbs) => (
-            <li key={crumbs.join("/")} className="flex items-center gap-1 border-gray-300 [&:not(:first-child)]:border-l [&:not(:first-child)]:pl-4">
+            <li
+              key={crumbs.join('/')}
+              className="flex items-center gap-1 border-gray-300 [&:not(:first-child)]:border-l [&:not(:first-child)]:pl-4"
+            >
               {crumbs.map((crumb, j) => (
                 <React.Fragment key={`${j}-${crumb}`}>
                   {j > 0 && <ChevronRight className="h-3 w-3 text-gray-400" aria-hidden="true" />}
-                  <span className={j === crumbs.length - 1 ? 'font-medium text-gray-900' : 'text-gray-500'}>
+                  <span
+                    className={
+                      j === crumbs.length - 1 ? 'font-medium text-gray-900' : 'text-gray-500'
+                    }
+                  >
                     {crumb}
                   </span>
                 </React.Fragment>
@@ -379,7 +429,10 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">
           {/* Description */}
-          <section className="rounded-lg border border-gray-200 bg-white p-4" aria-labelledby="doc-description">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-description"
+          >
             <h2 id="doc-description" className="mb-2 text-sm font-semibold text-gray-900">
               Description
             </h2>
@@ -395,17 +448,24 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
                   className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   placeholder="Add a description..."
                 />
-                {descriptionError && <p className="mt-1 text-sm text-red-600">{descriptionError}</p>}
+                {descriptionError && (
+                  <p className="mt-1 text-sm text-red-600">{descriptionError}</p>
+                )}
               </>
             ) : (
               <p className="whitespace-pre-wrap break-words text-sm text-gray-600">
-                {doc.description || <span className="italic text-gray-400">No description provided.</span>}
+                {doc.description || (
+                  <span className="italic text-gray-400">No description provided.</span>
+                )}
               </p>
             )}
           </section>
 
           {/* Tags */}
-          <section className="rounded-lg border border-gray-200 bg-white p-4" aria-labelledby="doc-tags">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-tags"
+          >
             <h2 id="doc-tags" className="mb-2 text-sm font-semibold text-gray-900">
               Tags
             </h2>
@@ -432,20 +492,32 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
           </section>
 
           {/* Document preview */}
-          <section className="rounded-lg border border-gray-200 bg-white p-4" aria-labelledby="doc-preview">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-preview"
+          >
             <h2 id="doc-preview" className="mb-2 text-sm font-semibold text-gray-900">
               Preview
             </h2>
             {isPdf ? (
               preview.url ? (
                 <div className="overflow-hidden rounded border border-gray-200">
-                  <iframe src={preview.url} className="h-[70vh] min-h-[400px] w-full" title={`Preview of ${doc.title}`} />
+                  <iframe
+                    src={preview.url}
+                    className="h-[70vh] min-h-[400px] w-full"
+                    title={`Preview of ${doc.title}`}
+                  />
                 </div>
               ) : preview.loading ? (
-                <div className="h-64 animate-pulse rounded bg-gray-100" aria-label="Loading preview" />
+                <div
+                  className="h-64 animate-pulse rounded bg-gray-100"
+                  aria-label="Loading preview"
+                />
               ) : (
                 <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
-                  <p className="mb-3">Preview unavailable{preview.error ? `: ${preview.error}` : '.'}</p>
+                  <p className="mb-3">
+                    Preview unavailable{preview.error ? `: ${preview.error}` : '.'}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="secondary" size="sm" onClick={preview.retry}>
                       <RefreshCw className="h-4 w-4" />
@@ -470,7 +542,10 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
 
         {/* Sidebar metadata */}
         <div className="space-y-4">
-          <section className="rounded-lg border border-gray-200 bg-white p-4" aria-labelledby="doc-details">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-details"
+          >
             <h2 id="doc-details" className="mb-3 text-sm font-semibold text-gray-900">
               Details
             </h2>
@@ -502,7 +577,10 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
             </dl>
           </section>
 
-          <section className="rounded-lg border border-gray-200 bg-white p-4" aria-labelledby="doc-jurisdictions">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-jurisdictions"
+          >
             <h2 id="doc-jurisdictions" className="mb-3 text-sm font-semibold text-gray-900">
               Jurisdictions
             </h2>
@@ -526,11 +604,16 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
         title="Delete document"
       >
         <p className="mb-4 break-words text-sm text-gray-600">
-          Are you sure you want to delete <strong>{doc.title}</strong>? This document will be moved to trash and
-          permanently deleted after 30 days.
+          Are you sure you want to delete <strong>{doc.title}</strong>? This document will be moved
+          to trash and permanently deleted after 30 days.
         </p>
         <div className="flex justify-end gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setShowDeleteModal(false)} disabled={isDeleting}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowDeleteModal(false)}
+            disabled={isDeleting}
+          >
             Cancel
           </Button>
           <Button variant="danger" size="sm" onClick={handleDelete} isLoading={isDeleting}>

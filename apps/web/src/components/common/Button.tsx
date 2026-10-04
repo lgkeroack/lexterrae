@@ -16,8 +16,7 @@ const variantClasses: Record<ButtonVariant, string> = {
     'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500 disabled:bg-blue-300',
   secondary:
     'bg-gray-200 text-gray-800 hover:bg-gray-300 focus-visible:ring-gray-400 disabled:bg-gray-100 disabled:text-gray-500',
-  danger:
-    'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300',
+  danger: 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300',
   ghost:
     'bg-transparent text-gray-700 hover:bg-gray-100 focus-visible:ring-gray-400 disabled:text-gray-300',
 };
@@ -53,9 +52,7 @@ export function Button({
       disabled={disabled || isLoading}
       {...props}
     >
-      {isLoading && (
-        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-      )}
+      {isLoading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
       {children}
     </button>
   );

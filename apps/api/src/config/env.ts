@@ -27,7 +27,8 @@ function loadDotEnv(): void {
     let value = trimmed.slice(eqIdx + 1).trim();
     if (
       value.length >= 2 &&
-      ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+      ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'")))
     ) {
       value = value.slice(1, -1);
     }
@@ -54,7 +55,12 @@ const envSchema = z.object({
   CORS_ORIGIN: z
     .string()
     .default('http://localhost:5173')
-    .transform((value) => value.split(',').map((o) => o.trim()).filter(Boolean)),
+    .transform((value) =>
+      value
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+    ),
   MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(200).default(50),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().default(900000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().default(100),

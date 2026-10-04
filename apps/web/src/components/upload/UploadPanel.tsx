@@ -11,10 +11,7 @@ import {
   CheckCircle2,
   RotateCcw,
 } from 'lucide-react';
-import {
-  useJurisdictionStore,
-  MAX_JURISDICTION_SELECTIONS,
-} from '../../stores/jurisdictionStore';
+import { useJurisdictionStore, MAX_JURISDICTION_SELECTIONS } from '../../stores/jurisdictionStore';
 import { getAccessToken, refreshAccessToken } from '../../services/api';
 import { formatFileSize } from '../../utils/format';
 import { Button } from '../common/Button';
@@ -37,7 +34,17 @@ import {
  * just for fast feedback, since browsers report inconsistent MIME types for csv/rtf/office files.
  */
 const ACCEPTED_EXTENSIONS = [
-  'pdf', 'txt', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'rtf', 'png', 'jpg', 'jpeg',
+  'pdf',
+  'txt',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'csv',
+  'rtf',
+  'png',
+  'jpg',
+  'jpeg',
 ] as const;
 const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(',');
 const ACCEPTED_LABEL = 'PDF, Word, Excel, CSV, RTF, TXT, PNG or JPG';
@@ -56,10 +63,14 @@ function getExtension(name: string): string {
 
 function getFileIcon(name: string) {
   const ext = getExtension(name);
-  if (ext === 'pdf') return <FileText className="h-8 w-8 flex-shrink-0 text-red-500" aria-hidden="true" />;
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return <FileSpreadsheet className="h-8 w-8 flex-shrink-0 text-green-600" aria-hidden="true" />;
-  if (['png', 'jpg', 'jpeg'].includes(ext)) return <FileImage className="h-8 w-8 flex-shrink-0 text-purple-500" aria-hidden="true" />;
-  if (['doc', 'docx', 'rtf'].includes(ext)) return <FileText className="h-8 w-8 flex-shrink-0 text-blue-600" aria-hidden="true" />;
+  if (ext === 'pdf')
+    return <FileText className="h-8 w-8 flex-shrink-0 text-red-500" aria-hidden="true" />;
+  if (['xls', 'xlsx', 'csv'].includes(ext))
+    return <FileSpreadsheet className="h-8 w-8 flex-shrink-0 text-green-600" aria-hidden="true" />;
+  if (['png', 'jpg', 'jpeg'].includes(ext))
+    return <FileImage className="h-8 w-8 flex-shrink-0 text-purple-500" aria-hidden="true" />;
+  if (['doc', 'docx', 'rtf'].includes(ext))
+    return <FileText className="h-8 w-8 flex-shrink-0 text-blue-600" aria-hidden="true" />;
   return <FileIcon className="h-8 w-8 flex-shrink-0 text-gray-500" aria-hidden="true" />;
 }
 
@@ -99,7 +110,8 @@ function readProblem(xhr: XMLHttpRequest): string {
   } catch {
     // not JSON
   }
-  if (xhr.status === 413) return `The file is too large. The maximum size is ${MAX_FILE_SIZE_MB} MB.`;
+  if (xhr.status === 413)
+    return `The file is too large. The maximum size is ${MAX_FILE_SIZE_MB} MB.`;
   if (xhr.status === 401) return 'Your session has expired. Please sign in again.';
   if (xhr.status >= 500) return 'The server could not process the upload. Please try again.';
   return `Upload failed (HTTP ${xhr.status}).`;
@@ -200,7 +212,8 @@ export function UploadPanel() {
   if (descriptionError) missing.push('shorten the description');
   if (tagsError) missing.push('fix the tags');
   if (selections.length === 0) missing.push('select at least one jurisdiction');
-  else if (selections.length > MAX_JURISDICTION_SELECTIONS) missing.push(`select at most ${MAX_JURISDICTION_SELECTIONS} jurisdictions`);
+  else if (selections.length > MAX_JURISDICTION_SELECTIONS)
+    missing.push(`select at most ${MAX_JURISDICTION_SELECTIONS} jurisdictions`);
   else if (!hasLoadedProvinces) missing.push('wait for jurisdictions to load');
 
   const canSubmit = missing.length === 0 && !isBusy;
@@ -225,7 +238,7 @@ export function UploadPanel() {
         setAutoTitle(nameWithoutExt);
       }
     },
-    [title, autoTitle, status]
+    [title, autoTitle, status],
   );
 
   const handleFiles = useCallback(
@@ -237,7 +250,7 @@ export function UploadPanel() {
       }
       handleFileSelect(files[0]!);
     },
-    [handleFileSelect]
+    [handleFileSelect],
   );
 
   const handleDragEnter = useCallback(
@@ -247,7 +260,7 @@ export function UploadPanel() {
       dragDepth.current += 1;
       setIsDragOver(true);
     },
-    [isBusy]
+    [isBusy],
   );
 
   const handleDragOver = useCallback(
@@ -255,7 +268,7 @@ export function UploadPanel() {
       e.preventDefault();
       e.dataTransfer.dropEffect = isBusy ? 'none' : 'copy';
     },
-    [isBusy]
+    [isBusy],
   );
 
   // Counting enter/leave avoids flicker when the pointer moves over child elements.
@@ -273,7 +286,7 @@ export function UploadPanel() {
       if (isBusy) return;
       handleFiles(e.dataTransfer.files);
     },
-    [handleFiles, isBusy]
+    [handleFiles, isBusy],
   );
 
   const openFilePicker = useCallback(() => {
@@ -286,7 +299,7 @@ export function UploadPanel() {
       // Reset so choosing the same file again still fires onChange
       e.target.value = '';
     },
-    [handleFiles]
+    [handleFiles],
   );
 
   const removeFile = useCallback(() => {
@@ -314,7 +327,11 @@ export function UploadPanel() {
       });
       xhr.addEventListener('load', () => resolve(xhr));
       xhr.addEventListener('error', () =>
-        reject(new Error('Network error: the upload could not reach the server. Check your connection and try again.'))
+        reject(
+          new Error(
+            'Network error: the upload could not reach the server. Check your connection and try again.',
+          ),
+        ),
       );
       xhr.addEventListener('abort', () => reject(new UploadAbortedError('Upload cancelled.')));
       xhr.open('POST', '/api/documents');
@@ -330,7 +347,7 @@ export function UploadPanel() {
     const { ids, missing: unresolved } = getSelectionIds();
     if (unresolved.length > 0 || ids.length === 0) {
       setUploadError(
-        `These jurisdictions aren't recognised by the server: ${unresolved.map((s) => s.name).join(', ')}. Remove them and try again.`
+        `These jurisdictions aren't recognised by the server: ${unresolved.map((s) => s.name).join(', ')}. Remove them and try again.`,
       );
       setStatus('error');
       return;
@@ -364,7 +381,9 @@ export function UploadPanel() {
 
       let doc: UploadedDocument = { id: '', title: title.trim() };
       try {
-        const body = JSON.parse(xhr.responseText) as { data?: UploadedDocument } & Partial<UploadedDocument>;
+        const body = JSON.parse(xhr.responseText) as {
+          data?: UploadedDocument;
+        } & Partial<UploadedDocument>;
         const d = body.data ?? body;
         if (d.id) doc = { id: d.id, title: d.title || doc.title };
       } catch {
@@ -413,7 +432,11 @@ export function UploadPanel() {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
             <CheckCircle2 className="h-6 w-6 text-green-600" aria-hidden="true" />
           </div>
-          <h2 ref={successHeadingRef} tabIndex={-1} className="mb-2 text-lg font-semibold text-green-900 focus:outline-none">
+          <h2
+            ref={successHeadingRef}
+            tabIndex={-1}
+            className="mb-2 text-lg font-semibold text-green-900 focus:outline-none"
+          >
             Upload successful
           </h2>
           <p className="mb-6 break-words text-sm text-green-800">
@@ -511,11 +534,17 @@ export function UploadPanel() {
                   : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
             }`}
           >
-            <Upload className={`mx-auto mb-3 h-10 w-10 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`} aria-hidden="true" />
+            <Upload
+              className={`mx-auto mb-3 h-10 w-10 ${isDragOver ? 'text-blue-500' : 'text-gray-400'}`}
+              aria-hidden="true"
+            />
             <p className="mb-1 text-sm font-medium text-gray-700">
-              {isDragOver ? 'Drop to add this file' : (
+              {isDragOver ? (
+                'Drop to add this file'
+              ) : (
                 <>
-                  Drag and drop a file here, or <span className="text-blue-600 underline">browse</span>
+                  Drag and drop a file here, or{' '}
+                  <span className="text-blue-600 underline">browse</span>
                 </>
               )}
             </p>
@@ -526,7 +555,10 @@ export function UploadPanel() {
         )}
 
         {fileError && (
-          <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3">
+          <div
+            role="alert"
+            className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3"
+          >
             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" aria-hidden="true" />
             <p className="text-sm text-red-700">{fileError}</p>
           </div>
@@ -534,7 +566,10 @@ export function UploadPanel() {
       </section>
 
       {/* 2. Metadata */}
-      <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 sm:p-6" aria-labelledby="upload-details-heading">
+      <section
+        className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 sm:p-6"
+        aria-labelledby="upload-details-heading"
+      >
         <h2 id="upload-details-heading" className="text-sm font-semibold text-gray-900">
           2. Document details
         </h2>
@@ -553,12 +588,19 @@ export function UploadPanel() {
           required
           aria-required="true"
           disabled={isBusy}
-          error={showTitleError ? titleError ?? undefined : undefined}
-          helperText={file && autoTitle === title ? 'Filled in from the file name. Edit as needed.' : undefined}
+          error={showTitleError ? (titleError ?? undefined) : undefined}
+          helperText={
+            file && autoTitle === title
+              ? 'Filled in from the file name. Edit as needed.'
+              : undefined
+          }
         />
 
         <div>
-          <label htmlFor="upload-description" className="mb-1 block text-sm font-medium text-gray-700">
+          <label
+            htmlFor="upload-description"
+            className="mb-1 block text-sm font-medium text-gray-700"
+          >
             Description <span className="font-normal text-gray-400">(optional)</span>
           </label>
           <textarea
@@ -604,18 +646,27 @@ export function UploadPanel() {
             3. Jurisdictions *
           </h2>
           <p className="mt-1 text-xs text-gray-500">
-            Tag where this document applies: federal, provinces and territories, or specific municipalities
-            (up to {MAX_JURISDICTION_SELECTIONS}).
+            Tag where this document applies: federal, provinces and territories, or specific
+            municipalities (up to {MAX_JURISDICTION_SELECTIONS}).
           </p>
         </div>
 
         {provincesError && (
-          <div role="alert" className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            role="alert"
+            className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+          >
             <p className="text-sm text-amber-800">
-              Couldn&apos;t load jurisdictions from the server ({provincesError}). You can browse the map, but uploading
-              needs this list.
+              Couldn&apos;t load jurisdictions from the server ({provincesError}). You can browse
+              the map, but uploading needs this list.
             </p>
-            <Button type="button" variant="secondary" size="sm" onClick={() => void fetchProvinces(true)} isLoading={isLoadingProvinces}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => void fetchProvinces(true)}
+              isLoading={isLoadingProvinces}
+            >
               Retry
             </Button>
           </div>
@@ -630,7 +681,10 @@ export function UploadPanel() {
 
       {/* Upload error */}
       {uploadError && (
-        <div role="alert" className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3">
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3"
+        >
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" aria-hidden="true" />
           <p className="text-sm text-red-700">{uploadError}</p>
         </div>
@@ -664,12 +718,22 @@ export function UploadPanel() {
       {/* Submit */}
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
         {!isBusy && missing.length > 0 && (
-          <p className="text-sm text-gray-500 sm:mr-auto" aria-live="polite" id="upload-requirements">
+          <p
+            className="text-sm text-gray-500 sm:mr-auto"
+            aria-live="polite"
+            id="upload-requirements"
+          >
             To upload, {missing.join(', ')}.
           </p>
         )}
         {isBusy && (
-          <Button type="button" variant="secondary" size="lg" onClick={cancelUpload} disabled={status === 'processing'}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            onClick={cancelUpload}
+            disabled={status === 'processing'}
+          >
             Cancel
           </Button>
         )}
@@ -680,7 +744,12 @@ export function UploadPanel() {
           disabled={!canSubmit}
           aria-describedby={missing.length > 0 ? 'upload-requirements' : undefined}
         >
-          {!isBusy && (status === 'error' ? <RotateCcw className="h-4 w-4" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />)}
+          {!isBusy &&
+            (status === 'error' ? (
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <Upload className="h-4 w-4" aria-hidden="true" />
+            ))}
           {isBusy ? 'Uploading…' : status === 'error' ? 'Retry upload' : 'Upload document'}
         </Button>
       </div>

@@ -91,7 +91,10 @@ export function JurisdictionMap() {
     return counts;
   }, [selections]);
 
-  const getState = useCallback((code: string): ProvinceState => stateByCode.get(code) ?? 'none', [stateByCode]);
+  const getState = useCallback(
+    (code: string): ProvinceState => stateByCode.get(code) ?? 'none',
+    [stateByCode],
+  );
 
   const nameByCode = useMemo(() => {
     const m = new Map<string, string>();
@@ -142,7 +145,7 @@ export function JurisdictionMap() {
         toggleProvince(code);
       }
     },
-    [toggleProvince]
+    [toggleProvince],
   );
 
   const describeState = (code: string): string => {
@@ -171,7 +174,11 @@ export function JurisdictionMap() {
               : 'border-gray-300 bg-white text-gray-800 hover:bg-gray-50'
           }`}
         >
-          {isFederalSelected ? <Check className="h-4 w-4" aria-hidden="true" /> : <Landmark className="h-4 w-4" aria-hidden="true" />}
+          {isFederalSelected ? (
+            <Check className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Landmark className="h-4 w-4" aria-hidden="true" />
+          )}
           Federal (applies to all of Canada)
         </button>
         <span className="text-xs text-gray-500">
@@ -246,7 +253,13 @@ export function JurisdictionMap() {
                 <path
                   d={prov.path}
                   fill={fill}
-                  stroke={isFocus ? COLORS.focus : state === 'selected' ? COLORS.strokeSelected : COLORS.stroke}
+                  stroke={
+                    isFocus
+                      ? COLORS.focus
+                      : state === 'selected'
+                        ? COLORS.strokeSelected
+                        : COLORS.stroke
+                  }
                   strokeWidth={isFocus ? 4 : state === 'selected' ? 2 : 1}
                   strokeDasharray={prov.level === 'territorial' && !isFocus ? '5,3' : undefined}
                   strokeLinejoin="round"
@@ -286,23 +299,38 @@ export function JurisdictionMap() {
       {/* Legend */}
       <ul className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-600" aria-label="Map legend">
         <li className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm border" style={{ background: COLORS.unselected, borderColor: COLORS.stroke }} />
+          <span
+            className="h-3 w-3 rounded-sm border"
+            style={{ background: COLORS.unselected, borderColor: COLORS.stroke }}
+          />
           Not selected
         </li>
         <li className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm border" style={{ background: COLORS.selected, borderColor: COLORS.strokeSelected }} />
+          <span
+            className="h-3 w-3 rounded-sm border"
+            style={{ background: COLORS.selected, borderColor: COLORS.strokeSelected }}
+          />
           Entire province/territory
         </li>
         <li className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm border" style={{ background: COLORS.partial, borderColor: COLORS.stroke }} />
+          <span
+            className="h-3 w-3 rounded-sm border"
+            style={{ background: COLORS.partial, borderColor: COLORS.stroke }}
+          />
           Some municipalities
         </li>
         <li className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm border border-dashed" style={{ background: COLORS.unselected, borderColor: COLORS.stroke }} />
+          <span
+            className="h-3 w-3 rounded-sm border border-dashed"
+            style={{ background: COLORS.unselected, borderColor: COLORS.stroke }}
+          />
           Territory
         </li>
         <li className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-sm border" style={{ background: COLORS.civilLaw, borderColor: COLORS.stroke }} />
+          <span
+            className="h-3 w-3 rounded-sm border"
+            style={{ background: COLORS.civilLaw, borderColor: COLORS.stroke }}
+          />
           Civil law (Quebec)
         </li>
         <li className="flex items-center gap-1.5">
@@ -312,13 +340,16 @@ export function JurisdictionMap() {
       </ul>
 
       <p className="text-xs text-gray-500">
-        Click a province or territory (or Tab to it and press Enter/Space) to select all of it.
-        To pick specific cities, use <span className="font-medium">Municipalities</span> in the list below.
+        Click a province or territory (or Tab to it and press Enter/Space) to select all of it. To
+        pick specific cities, use <span className="font-medium">Municipalities</span> in the list
+        below.
       </p>
 
       {/* Non-map alternative */}
       <fieldset>
-        <legend className="mb-2 text-sm font-medium text-gray-900">Provinces and territories</legend>
+        <legend className="mb-2 text-sm font-medium text-gray-900">
+          Provinces and territories
+        </legend>
         <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
           {provinces.map((p) => {
             const state = getState(p.code);
@@ -331,10 +362,19 @@ export function JurisdictionMap() {
                   state !== 'none' ? 'bg-blue-50' : 'hover:bg-gray-50'
                 }`}
               >
-                <TriStateCheckbox id={inputId} state={state} onChange={() => toggleProvince(p.code)} />
-                <label htmlFor={inputId} className="min-w-0 flex-1 cursor-pointer truncate text-sm text-gray-900">
+                <TriStateCheckbox
+                  id={inputId}
+                  state={state}
+                  onChange={() => toggleProvince(p.code)}
+                />
+                <label
+                  htmlFor={inputId}
+                  className="min-w-0 flex-1 cursor-pointer truncate text-sm text-gray-900"
+                >
                   {p.name}
-                  {p.level === 'territorial' && <span className="ml-1 text-xs text-gray-400">(territory)</span>}
+                  {p.level === 'territorial' && (
+                    <span className="ml-1 text-xs text-gray-400">(territory)</span>
+                  )}
                 </label>
                 <button
                   type="button"

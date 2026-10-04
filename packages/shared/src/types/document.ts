@@ -9,7 +9,17 @@ export interface DocumentJurisdictionSummary {
   parentId: string | null;
 }
 
-export type FileType = 'pdf' | 'txt' | 'doc' | 'docx' | 'xls' | 'xlsx' | 'csv' | 'rtf' | 'png' | 'jpg';
+export type FileType =
+  | 'pdf'
+  | 'txt'
+  | 'doc'
+  | 'docx'
+  | 'xls'
+  | 'xlsx'
+  | 'csv'
+  | 'rtf'
+  | 'png'
+  | 'jpg';
 
 export interface Document {
   id: string;

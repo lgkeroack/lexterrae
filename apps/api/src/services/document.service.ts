@@ -66,7 +66,10 @@ export class DocumentService {
 
     // Validate file type via magic bytes
     const sanitizedFilename = fileService.sanitizeFilename(file.originalname);
-    const { mimeType, extension } = await fileService.validateFileType(file.buffer, sanitizedFilename);
+    const { mimeType, extension } = await fileService.validateFileType(
+      file.buffer,
+      sanitizedFilename,
+    );
 
     // Validate jurisdictions exist (accepts UUIDs or jurisdiction codes such as "BC")
     const jurisdictions = await jurisdictionService.resolveJurisdictionRefs(jurisdictionIds);
@@ -361,12 +364,7 @@ export class DocumentService {
   /**
    * Soft-deletes a document by setting the deletedAt timestamp.
    */
-  async deleteDocument(
-    documentId: string,
-    userId: string,
-    requestId: string,
-    actorIp: string,
-  ) {
+  async deleteDocument(documentId: string, userId: string, requestId: string, actorIp: string) {
     const existing = await prisma.document.findUnique({
       where: { id: documentId },
     });
@@ -402,12 +400,7 @@ export class DocumentService {
    * Returns a download stream for a document's file from S3.
    * Creates an audit log for the download event.
    */
-  async downloadDocument(
-    documentId: string,
-    userId: string,
-    requestId: string,
-    actorIp: string,
-  ) {
+  async downloadDocument(documentId: string, userId: string, requestId: string, actorIp: string) {
     const document = await prisma.document.findUnique({
       where: { id: documentId },
     });

@@ -18,7 +18,7 @@ export function ProvinceDetail() {
 
   const province = useMemo(
     () => provinces.find((p) => p.code === activeProvince),
-    [provinces, activeProvince]
+    [provinces, activeProvince],
   );
 
   // Move focus into the drill-down view so keyboard/screen-reader users know where they are.
@@ -30,11 +30,9 @@ export function ProvinceDetail() {
   const isEntireProvinceSelected = useMemo(
     () =>
       selections.some(
-        (s) =>
-          (s.level === 'provincial' || s.level === 'territorial') &&
-          s.id === activeProvince
+        (s) => (s.level === 'provincial' || s.level === 'territorial') && s.id === activeProvince,
       ),
-    [selections, activeProvince]
+    [selections, activeProvince],
   );
 
   const selectedMunicipalityCodes = useMemo(() => {
@@ -50,8 +48,7 @@ export function ProvinceDetail() {
   const filteredMunicipalities = useMemo(() => {
     if (!province) return [];
     // Accent-insensitive match so "montreal" finds "Montréal"
-    const normalize = (s: string) =>
-      s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
     const q = normalize(searchQuery.trim());
     return province.municipalities.filter((m) => normalize(m.name).includes(q));
   }, [province, searchQuery]);
@@ -109,7 +106,10 @@ export function ProvinceDetail() {
 
         {/* Municipality search */}
         <div className="relative mb-3">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+          <Search
+            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+            aria-hidden="true"
+          />
           <input
             type="search"
             aria-label={`Search municipalities in ${province.name}`}
@@ -137,8 +137,7 @@ export function ProvinceDetail() {
             ) : (
               filteredMunicipalities.map((muni) => {
                 const isChecked =
-                  isEntireProvinceSelected ||
-                  selectedMunicipalityCodes.has(muni.code);
+                  isEntireProvinceSelected || selectedMunicipalityCodes.has(muni.code);
 
                 return (
                   <label

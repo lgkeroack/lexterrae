@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import type { User, LoginRequest, RegisterRequest, AuthResponse } from '@lexterrae/shared';
 import {
   api,
-  clearTokens,
   getAccessToken,
   getErrorMessage,
   getRefreshToken,
@@ -208,10 +207,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .refreshToken()
         .catch(() => {
           // Refresh failed (expired/revoked token or server unreachable).
+          // Auth failures already cleared stored state via onAuthFailure. For
+          // outages (network/5xx) keep storage so a later reload can recover.
           if (get().status === 'checking') {
-            clearTokens();
-            writeUser(null);
-            set({ user: null, accessToken: null, status: 'unauthenticated', isAuthenticated: false });
+            set({ accessToken: null, status: 'unauthenticated', isAuthenticated: false });
           }
         })
         .finally(() => {
@@ -237,7 +236,18 @@ onAuthFailure(() => {
   });
 });
 
-if (initial === 'authenticated') scheduleRefresh();
+if (initial === 'authenticated') {
+  scheduleRefresh();
+  if (!useAuthStore.getState().user) {
+    api
+      .me()
+      .then((user) => {
+        writeUser(user);
+        useAuthStore.setState({ user });
+      })
+      .catch(() => undefined);
+  }
+}
 
 if (typeof window !== 'undefined') {
   // Keep tabs in sync: logging out (or rotating tokens) in one tab applies to all.
@@ -269,7 +279,10 @@ if (typeof window !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     if (useAuthStore.getState().status === 'authenticated' && !isAccessTokenFresh()) {
-      useAuthStore.getState().refreshToken().catch(() => undefined);
+      useAuthStore
+        .getState()
+        .refreshToken()
+        .catch(() => undefined);
     }
   });
 }

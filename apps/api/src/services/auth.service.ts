@@ -15,7 +15,13 @@ import { createModuleLogger } from '../lib/logger.js';
 
 const logger = createModuleLogger('auth.service');
 const BCRYPT_ROUNDS = 12;
-const USER_SELECT = { id: true, email: true, displayName: true, createdAt: true, updatedAt: true } as const;
+const USER_SELECT = {
+  id: true,
+  email: true,
+  displayName: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 // SECURITY: Compared against when the email is unknown so login timing does not reveal which accounts exist
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync('timing-equalisation-placeholder', BCRYPT_ROUNDS);
@@ -101,13 +107,21 @@ export class AuthService {
     // already present, which also closes the race where two concurrent refreshes reuse one token.
     let claimed: string | null;
     try {
-      claimed = await redis.set(`revoked:${payload.jti}`, '1', 'EX', secondsUntilExpiry(payload.exp), 'NX');
+      claimed = await redis.set(
+        `revoked:${payload.jti}`,
+        '1',
+        'EX',
+        secondsUntilExpiry(payload.exp),
+        'NX',
+      );
     } catch (err) {
       logger.error({
         message: 'Redis unavailable during token refresh',
         error: err instanceof Error ? err.message : String(err),
       });
-      throw new ServiceUnavailableError('Unable to refresh your session right now. Please try again shortly.');
+      throw new ServiceUnavailableError(
+        'Unable to refresh your session right now. Please try again shortly.',
+      );
     }
     if (claimed === null) {
       logger.warn({ userId: payload.userId, message: 'Refresh token reuse rejected' });
@@ -115,7 +129,10 @@ export class AuthService {
     }
 
     // The account may have been deleted since the token was issued
-    const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true } });
+    const user = await prisma.user.findUnique({
+      where: { id: payload.userId },
+      select: { id: true },
+    });
     if (!user) {
       throw new AuthenticationError('Your session has expired. Please sign in again.');
     }
@@ -171,17 +188,17 @@ export class AuthService {
     const accessJti = uuidv4();
     const refreshJti = uuidv4();
 
-    const accessToken = jwt.sign(
-      { userId, jti: accessJti, type: 'access' },
-      env.JWT_SECRET,
-      { expiresIn: env.JWT_EXPIRY as string & jwt.SignOptions['expiresIn'], issuer: JWT_ISSUER, audience: JWT_AUDIENCE },
-    );
+    const accessToken = jwt.sign({ userId, jti: accessJti, type: 'access' }, env.JWT_SECRET, {
+      expiresIn: env.JWT_EXPIRY as string & jwt.SignOptions['expiresIn'],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
 
-    const refreshToken = jwt.sign(
-      { userId, jti: refreshJti, type: 'refresh' },
-      env.JWT_SECRET,
-      { expiresIn: env.JWT_REFRESH_EXPIRY as string & jwt.SignOptions['expiresIn'], issuer: JWT_ISSUER, audience: JWT_AUDIENCE },
-    );
+    const refreshToken = jwt.sign({ userId, jti: refreshJti, type: 'refresh' }, env.JWT_SECRET, {
+      expiresIn: env.JWT_REFRESH_EXPIRY as string & jwt.SignOptions['expiresIn'],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
 
     return { accessToken, refreshToken };
   }
