@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Download,
@@ -10,30 +10,106 @@ import {
   FileText,
   File,
   ChevronRight,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import type { DocumentWithJurisdictions } from '@lexterrae/shared';
-import { useDocumentStore } from '../../stores/documentStore';
+import { MAX_DESCRIPTION_LENGTH } from '@lexterrae/shared';
+import { useDocumentStore, fetchDocumentBlob } from '../../stores/documentStore';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Badge } from '../common/Badge';
 import { Modal } from '../common/Modal';
-import { LoadingSpinner } from '../common/LoadingSpinner';
+import { formatDate, formatDateTime, formatFileSize, toISODate } from '../../utils/format';
 
 interface DocumentDetailProps {
   documentId: string;
 }
 
+const MAX_TITLE = 255;
+const MAX_DESCRIPTION = MAX_DESCRIPTION_LENGTH;
+const MAX_TAGS = 20;
+const MAX_TAG_LENGTH = 50;
+
+function parseTags(input: string): string[] {
+  const seen = new Set<string>();
+  return input
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => {
+      if (!t || seen.has(t.toLowerCase())) return false;
+      seen.add(t.toLowerCase());
+      return true;
+    });
+}
+
+/** Where "Back" should go: the list URL (with filters) we came from, if any. */
+function useBackTarget(): string {
+  const location = useLocation();
+  const from = (location.state as { from?: unknown } | null)?.from;
+  return typeof from === 'string' && from.startsWith('/documents') ? from : '/documents';
+}
+
+/**
+ * Loads a PDF through fetch (so the auth header is sent) and exposes it as a
+ * blob URL. The download endpoint itself sends `Content-Disposition: attachment`
+ * and `X-Frame-Options: DENY`, so it cannot be embedded directly.
+ */
+function usePdfPreview(documentId: string, enabled: boolean) {
+  const [state, setState] = useState<{
+    url: string | null;
+    error: string | null;
+    loading: boolean;
+  }>({
+    url: null,
+    error: null,
+    loading: false,
+  });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!enabled) {
+      setState({ url: null, error: null, loading: false });
+      return;
+    }
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    setState({ url: null, error: null, loading: true });
+    fetchDocumentBlob(documentId, controller.signal)
+      .then((blob) => {
+        objectUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+        setState({ url: objectUrl, error: null, loading: false });
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        setState({
+          url: null,
+          error: err instanceof Error ? err.message : 'Preview failed',
+          loading: false,
+        });
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [documentId, enabled, attempt]);
+
+  return { ...state, retry: () => setAttempt((a) => a + 1) };
+}
+
 export function DocumentDetail({ documentId }: DocumentDetailProps) {
   const navigate = useNavigate();
-  const {
-    currentDocument,
-    isLoadingDetail,
-    error,
-    fetchDocument,
-    updateDocument,
-    deleteDocument,
-    downloadDocument,
-  } = useDocumentStore();
+  const backTo = useBackTarget();
+
+  const currentDocument = useDocumentStore((s) => s.currentDocument);
+  const isLoadingDetail = useDocumentStore((s) => s.isLoadingDetail);
+  const detailError = useDocumentStore((s) => s.detailError);
+  const actionError = useDocumentStore((s) => s.actionError);
+  const fetchDocument = useDocumentStore((s) => s.fetchDocument);
+  const updateDocument = useDocumentStore((s) => s.updateDocument);
+  const deleteDocument = useDocumentStore((s) => s.deleteDocument);
+  const downloadDocument = useDocumentStore((s) => s.downloadDocument);
+  const clearActionError = useDocumentStore((s) => s.clearActionError);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -42,146 +118,246 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
+  // Only use the store's document if it is the one this route is showing.
+  const doc = currentDocument && currentDocument.id === documentId ? currentDocument : null;
+  const isPdf = doc?.fileType === 'pdf';
+  const preview = usePdfPreview(documentId, Boolean(doc) && isPdf);
+
+  // Fetch, and reset local UI state, whenever the route's document changes.
   useEffect(() => {
+    setIsEditing(false);
+    setShowDeleteModal(false);
+    setIsDeleting(false);
     fetchDocument(documentId);
   }, [documentId, fetchDocument]);
 
+  // Seed the edit form from the loaded document (not while the user is editing).
   useEffect(() => {
-    if (currentDocument) {
-      setEditTitle(currentDocument.title);
-      setEditDescription(currentDocument.description || '');
-      setEditTags(currentDocument.tags.join(', '));
+    if (doc && !isEditing) {
+      setEditTitle(doc.title);
+      setEditDescription(doc.description || '');
+      setEditTags(doc.tags.join(', '));
     }
-  }, [currentDocument]);
+  }, [doc, isEditing]);
 
-  const handleSave = async () => {
-    if (!currentDocument) return;
+  useEffect(() => {
+    const previous = document.title;
+    document.title = doc
+      ? `${doc.title} · Lex Terrae`
+      : detailError
+        ? 'Document unavailable · Lex Terrae'
+        : 'Document · Lex Terrae';
+    return () => {
+      document.title = previous;
+    };
+  }, [doc, detailError]);
+
+  const parsedTags = useMemo(() => parseTags(editTags), [editTags]);
+  const titleError = !editTitle.trim()
+    ? 'Title is required'
+    : editTitle.trim().length > MAX_TITLE
+      ? `Title must be ${MAX_TITLE} characters or fewer`
+      : undefined;
+  const tagsError =
+    parsedTags.length > MAX_TAGS
+      ? `Maximum ${MAX_TAGS} tags allowed`
+      : parsedTags.some((t) => t.length > MAX_TAG_LENGTH)
+        ? `Each tag must be ${MAX_TAG_LENGTH} characters or fewer`
+        : undefined;
+  const descriptionError =
+    editDescription.trim().length > MAX_DESCRIPTION
+      ? `Description must be ${MAX_DESCRIPTION} characters or fewer`
+      : undefined;
+  const canSave = !titleError && !tagsError && !descriptionError;
+
+  const handleSave = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!doc || !canSave || isSaving) return;
     setIsSaving(true);
     try {
-      const tags = editTags
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0);
-      await updateDocument(currentDocument.id, {
+      await updateDocument(doc.id, {
         title: editTitle.trim(),
-        description: editDescription.trim() || undefined,
-        tags,
+        // Send '' (not undefined) so clearing the description is persisted.
+        description: editDescription.trim(),
+        tags: parsedTags,
       });
       setIsEditing(false);
     } catch {
-      // Error handled by store
+      // Store rolled back the optimistic update and set actionError.
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!currentDocument) return;
+    if (!doc) return;
     setIsDeleting(true);
     try {
-      await deleteDocument(currentDocument.id);
-      navigate('/documents');
+      await deleteDocument(doc.id);
+      setShowDeleteModal(false);
+      // Replace so Back doesn't return to a deleted document.
+      navigate(backTo, { replace: true });
     } catch {
       setIsDeleting(false);
+      setShowDeleteModal(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!doc) return;
+    setIsDownloading(true);
+    try {
+      await downloadDocument(doc.id, doc.originalFilename);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
   const handleCancelEdit = () => {
-    if (currentDocument) {
-      setEditTitle(currentDocument.title);
-      setEditDescription(currentDocument.description || '');
-      setEditTags(currentDocument.tags.join(', '));
+    if (doc) {
+      setEditTitle(doc.title);
+      setEditDescription(doc.description || '');
+      setEditTags(doc.tags.join(', '));
     }
     setIsEditing(false);
   };
 
-  if (isLoadingDetail) {
+  const backLink = (
+    <Link
+      to={backTo}
+      className="inline-flex items-center gap-1 rounded text-sm text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Back to documents
+    </Link>
+  );
+
+  if (!doc && detailError && !isLoadingDetail) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <LoadingSpinner size="lg" />
+      <div className="space-y-6">
+        {backLink}
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-4 py-10 text-center"
+        >
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-red-400" aria-hidden="true" />
+          <p className="mb-4 text-red-700">{detailError}</p>
+          <div className="flex justify-center gap-2">
+            <Button variant="secondary" size="sm" onClick={() => fetchDocument(documentId)}>
+              <RefreshCw className="h-4 w-4" />
+              Try again
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (error) {
+  if (!doc) {
+    // Loading skeleton
     return (
-      <div className="py-12 text-center">
-        <p className="mb-4 text-red-600">{error}</p>
-        <Button variant="secondary" onClick={() => navigate('/documents')}>
-          Back to Documents
-        </Button>
+      <div className="space-y-6" aria-busy="true">
+        {backLink}
+        <span className="sr-only" role="status">
+          Loading document
+        </span>
+        <div className="animate-pulse space-y-6" aria-hidden="true">
+          <div className="flex items-start gap-3">
+            <div className="h-8 w-8 rounded bg-gray-200" />
+            <div className="flex-1 space-y-2">
+              <div className="h-6 w-2/3 rounded bg-gray-200" />
+              <div className="h-4 w-1/2 rounded bg-gray-200" />
+            </div>
+          </div>
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="h-48 rounded-lg bg-gray-200 lg:col-span-2" />
+            <div className="h-48 rounded-lg bg-gray-200" />
+          </div>
+        </div>
       </div>
     );
   }
 
-  if (!currentDocument) {
-    return (
-      <div className="py-12 text-center">
-        <p className="mb-4 text-gray-600">Document not found.</p>
-        <Button variant="secondary" onClick={() => navigate('/documents')}>
-          Back to Documents
-        </Button>
-      </div>
-    );
-  }
-
-  const doc = currentDocument;
-  const isPdf = doc.fileType === 'pdf';
-
-  // Build jurisdiction breadcrumbs
   const jurisdictionBreadcrumbs = buildBreadcrumbs(doc);
 
   return (
     <div className="space-y-6">
-      {/* Back button */}
-      <button
-        onClick={() => navigate('/documents')}
-        className="flex items-center gap-1 text-sm text-gray-600 hover:text-gray-900"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Documents
-      </button>
+      {backLink}
+
+      {actionError && (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          <span>{actionError}</span>
+          <button
+            type="button"
+            onClick={clearActionError}
+            className="rounded p-0.5 text-red-500 hover:bg-red-100"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
+      <form
+        id="document-edit-form"
+        onSubmit={handleSave}
+        className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           {isPdf ? (
-            <FileText className="h-8 w-8 flex-shrink-0 text-red-500" />
+            <FileText className="h-8 w-8 flex-shrink-0 text-red-500" aria-hidden="true" />
           ) : (
-            <File className="h-8 w-8 flex-shrink-0 text-blue-500" />
+            <File className="h-8 w-8 flex-shrink-0 text-blue-500" aria-hidden="true" />
           )}
-          <div>
+          <div className="min-w-0 flex-1">
             {isEditing ? (
               <Input
+                id="edit-title"
+                aria-label="Title"
                 value={editTitle}
+                maxLength={MAX_TITLE}
                 onChange={(e) => setEditTitle(e.target.value)}
+                error={titleError}
                 className="text-lg font-semibold"
+                autoFocus
               />
             ) : (
-              <h1 className="text-xl font-bold text-gray-900">{doc.title}</h1>
+              <h1 className="break-words text-xl font-bold text-gray-900">{doc.title}</h1>
             )}
-            <p className="mt-1 text-sm text-gray-500">
-              {doc.originalFilename} &middot;{' '}
-              {formatSize(doc.fileSizeBytes)} &middot;{' '}
-              Uploaded {formatDate(doc.uploadedAt)}
+            <p className="mt-1 break-all text-sm text-gray-500">
+              <span title={doc.originalFilename}>{doc.originalFilename}</span> &middot;{' '}
+              {formatFileSize(doc.fileSizeBytes)} &middot; Uploaded{' '}
+              <time dateTime={toISODate(doc.uploadedAt)}>{formatDate(doc.uploadedAt)}</time>
             </p>
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-shrink-0 flex-wrap gap-2">
           {isEditing ? (
             <>
               <Button
+                type="submit"
                 variant="primary"
                 size="sm"
-                onClick={handleSave}
                 isLoading={isSaving}
+                disabled={!canSave}
               >
-                <Save className="h-4 w-4" />
+                {!isSaving && <Save className="h-4 w-4" />}
                 Save
               </Button>
-              <Button variant="ghost" size="sm" onClick={handleCancelEdit}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+              >
                 <X className="h-4 w-4" />
                 Cancel
               </Button>
@@ -189,6 +365,7 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
           ) : (
             <>
               <Button
+                type="button"
                 variant="secondary"
                 size="sm"
                 onClick={() => setIsEditing(true)}
@@ -197,16 +374,17 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
                 Edit
               </Button>
               <Button
+                type="button"
                 variant="secondary"
                 size="sm"
-                onClick={() =>
-                  downloadDocument(doc.id, doc.originalFilename)
-                }
+                onClick={handleDownload}
+                isLoading={isDownloading}
               >
-                <Download className="h-4 w-4" />
+                {!isDownloading && <Download className="h-4 w-4" />}
                 Download
               </Button>
               <Button
+                type="button"
                 variant="danger"
                 size="sm"
                 onClick={() => setShowDeleteModal(true)}
@@ -217,67 +395,90 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
             </>
           )}
         </div>
-      </div>
+      </form>
 
       {/* Jurisdiction breadcrumbs */}
       {jurisdictionBreadcrumbs.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 text-sm">
-          {jurisdictionBreadcrumbs.map((crumbs, i) => (
-            <div key={i} className="flex items-center gap-1">
-              {i > 0 && <span className="mx-2 text-gray-300">|</span>}
+        <ul
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm"
+          aria-label="Jurisdiction paths"
+        >
+          {jurisdictionBreadcrumbs.map((crumbs) => (
+            <li
+              key={crumbs.join('/')}
+              className="flex items-center gap-1 border-gray-300 [&:not(:first-child)]:border-l [&:not(:first-child)]:pl-4"
+            >
               {crumbs.map((crumb, j) => (
-                <React.Fragment key={j}>
-                  {j > 0 && (
-                    <ChevronRight className="h-3 w-3 text-gray-400" />
-                  )}
+                <React.Fragment key={`${j}-${crumb}`}>
+                  {j > 0 && <ChevronRight className="h-3 w-3 text-gray-400" aria-hidden="true" />}
                   <span
                     className={
-                      j === crumbs.length - 1
-                        ? 'font-medium text-gray-900'
-                        : 'text-gray-500'
+                      j === crumbs.length - 1 ? 'font-medium text-gray-900' : 'text-gray-500'
                     }
                   >
                     {crumb}
                   </span>
                 </React.Fragment>
               ))}
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       {/* Metadata */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
+        <div className="min-w-0 space-y-4 lg:col-span-2">
           {/* Description */}
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="mb-2 text-sm font-semibold text-gray-900">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-description"
+          >
+            <h2 id="doc-description" className="mb-2 text-sm font-semibold text-gray-900">
               Description
-            </h3>
+            </h2>
             {isEditing ? (
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                rows={3}
-                className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                placeholder="Add a description..."
-              />
+              <>
+                <textarea
+                  form="document-edit-form"
+                  aria-label="Description"
+                  value={editDescription}
+                  maxLength={MAX_DESCRIPTION}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={4}
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  placeholder="Add a description..."
+                />
+                {descriptionError && (
+                  <p className="mt-1 text-sm text-red-600">{descriptionError}</p>
+                )}
+              </>
             ) : (
-              <p className="text-sm text-gray-600">
-                {doc.description || 'No description provided.'}
+              <p className="whitespace-pre-wrap break-words text-sm text-gray-600">
+                {doc.description || (
+                  <span className="italic text-gray-400">No description provided.</span>
+                )}
               </p>
             )}
-          </div>
+          </section>
 
           {/* Tags */}
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="mb-2 text-sm font-semibold text-gray-900">Tags</h3>
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-tags"
+          >
+            <h2 id="doc-tags" className="mb-2 text-sm font-semibold text-gray-900">
+              Tags
+            </h2>
             {isEditing ? (
               <Input
+                id="edit-tags"
+                form="document-edit-form"
+                aria-label="Tags"
                 value={editTags}
                 onChange={(e) => setEditTags(e.target.value)}
                 placeholder="Comma-separated tags"
-                helperText="Separate tags with commas"
+                helperText={`Separate tags with commas (max ${MAX_TAGS})`}
+                error={tagsError}
               />
             ) : doc.tags.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
@@ -286,95 +487,103 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No tags.</p>
+              <p className="text-sm italic text-gray-400">No tags.</p>
             )}
-          </div>
+          </section>
 
           {/* Document preview */}
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="mb-2 text-sm font-semibold text-gray-900">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-preview"
+          >
+            <h2 id="doc-preview" className="mb-2 text-sm font-semibold text-gray-900">
               Preview
-            </h3>
+            </h2>
             {isPdf ? (
-              <div className="overflow-hidden rounded border border-gray-200">
-                <object
-                  data={`/api/documents/${doc.id}/download`}
-                  type="application/pdf"
-                  className="h-[600px] w-full"
-                >
+              preview.url ? (
+                <div className="overflow-hidden rounded border border-gray-200">
                   <iframe
-                    src={`/api/documents/${doc.id}/download`}
-                    className="h-[600px] w-full"
-                    title="PDF Preview"
-                  >
-                    <p className="p-4 text-sm text-gray-500">
-                      Your browser does not support PDF preview.{' '}
-                      <button
-                        onClick={() =>
-                          downloadDocument(doc.id, doc.originalFilename)
-                        }
-                        className="text-blue-600 hover:underline"
-                      >
-                        Download instead
-                      </button>
-                    </p>
-                  </iframe>
-                </object>
-              </div>
+                    src={preview.url}
+                    className="h-[70vh] min-h-[400px] w-full"
+                    title={`Preview of ${doc.title}`}
+                  />
+                </div>
+              ) : preview.loading ? (
+                <div
+                  className="h-64 animate-pulse rounded bg-gray-100"
+                  aria-label="Loading preview"
+                />
+              ) : (
+                <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+                  <p className="mb-3">
+                    Preview unavailable{preview.error ? `: ${preview.error}` : '.'}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="secondary" size="sm" onClick={preview.retry}>
+                      <RefreshCw className="h-4 w-4" />
+                      Retry
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={handleDownload}>
+                      <Download className="h-4 w-4" />
+                      Download instead
+                    </Button>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="max-h-96 overflow-auto rounded border border-gray-200 bg-gray-50 p-4">
-                <pre className="whitespace-pre-wrap text-sm text-gray-800">
+                <pre className="whitespace-pre-wrap break-words text-sm text-gray-800">
                   {doc.contentText || 'No text content available.'}
                 </pre>
               </div>
             )}
-          </div>
+          </section>
         </div>
 
         {/* Sidebar metadata */}
         <div className="space-y-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-details"
+          >
+            <h2 id="doc-details" className="mb-3 text-sm font-semibold text-gray-900">
               Details
-            </h3>
+            </h2>
             <dl className="space-y-2 text-sm">
               <div>
-                <dt className="text-gray-500">File Type</dt>
-                <dd className="font-medium uppercase text-gray-900">
-                  {doc.fileType}
-                </dd>
+                <dt className="text-gray-500">File type</dt>
+                <dd className="font-medium uppercase text-gray-900">{doc.fileType}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">File Size</dt>
-                <dd className="font-medium text-gray-900">
-                  {formatSize(doc.fileSizeBytes)}
-                </dd>
+                <dt className="text-gray-500">File size</dt>
+                <dd className="font-medium text-gray-900">{formatFileSize(doc.fileSizeBytes)}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Original Filename</dt>
-                <dd className="break-all font-medium text-gray-900">
-                  {doc.originalFilename}
-                </dd>
+                <dt className="text-gray-500">Original filename</dt>
+                <dd className="break-all font-medium text-gray-900">{doc.originalFilename}</dd>
               </div>
               <div>
                 <dt className="text-gray-500">Uploaded</dt>
                 <dd className="font-medium text-gray-900">
-                  {formatDate(doc.uploadedAt)}
+                  <time dateTime={toISODate(doc.uploadedAt)}>{formatDateTime(doc.uploadedAt)}</time>
                 </dd>
               </div>
               <div>
-                <dt className="text-gray-500">Last Updated</dt>
+                <dt className="text-gray-500">Last updated</dt>
                 <dd className="font-medium text-gray-900">
-                  {formatDate(doc.updatedAt)}
+                  <time dateTime={toISODate(doc.updatedAt)}>{formatDateTime(doc.updatedAt)}</time>
                 </dd>
               </div>
             </dl>
-          </div>
+          </section>
 
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="mb-3 text-sm font-semibold text-gray-900">
+          <section
+            className="rounded-lg border border-gray-200 bg-white p-4"
+            aria-labelledby="doc-jurisdictions"
+          >
+            <h2 id="doc-jurisdictions" className="mb-3 text-sm font-semibold text-gray-900">
               Jurisdictions
-            </h3>
+            </h2>
             {doc.jurisdictions.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {doc.jurisdictions.map((j) => (
@@ -382,36 +591,32 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No jurisdictions assigned.</p>
+              <p className="text-sm italic text-gray-400">No jurisdictions assigned.</p>
             )}
-          </div>
+          </section>
         </div>
       </div>
 
       {/* Delete confirmation modal */}
       <Modal
         isOpen={showDeleteModal}
-        onClose={() => setShowDeleteModal(false)}
-        title="Delete Document"
+        onClose={() => !isDeleting && setShowDeleteModal(false)}
+        title="Delete document"
       >
-        <p className="mb-4 text-sm text-gray-600">
-          Are you sure you want to delete <strong>{doc.title}</strong>? This
-          document will be moved to trash and permanently deleted after 30 days.
+        <p className="mb-4 break-words text-sm text-gray-600">
+          Are you sure you want to delete <strong>{doc.title}</strong>? This document will be moved
+          to trash and permanently deleted after 30 days.
         </p>
         <div className="flex justify-end gap-2">
           <Button
             variant="secondary"
             size="sm"
             onClick={() => setShowDeleteModal(false)}
+            disabled={isDeleting}
           >
             Cancel
           </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={handleDelete}
-            isLoading={isDeleting}
-          >
+          <Button variant="danger" size="sm" onClick={handleDelete} isLoading={isDeleting}>
             Delete
           </Button>
         </div>
@@ -422,56 +627,11 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
 
 // Helper functions
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function buildBreadcrumbs(doc: DocumentWithJurisdictions): string[][] {
-  const crumbs: string[][] = [];
-  const federalJ = doc.jurisdictions.find((j) => j.level === 'federal');
-  const provinces = doc.jurisdictions.filter(
-    (j) => j.level === 'provincial' || j.level === 'territorial'
-  );
-  const municipalities = doc.jurisdictions.filter(
-    (j) => j.level === 'municipal'
-  );
-
-  if (federalJ) {
-    crumbs.push(['Canada']);
-  }
-
-  provinces.forEach((prov) => {
-    const provMunis = municipalities.filter((m) => m.parentId === prov.id);
-    if (provMunis.length > 0) {
-      provMunis.forEach((m) => {
-        crumbs.push(['Canada', prov.name, m.name]);
-      });
-    } else {
-      crumbs.push(['Canada', prov.name]);
-    }
-  });
-
-  // Orphan municipalities (no parent province in the selections)
-  const coveredMuniIds = new Set(
-    provinces.flatMap((prov) =>
-      municipalities.filter((m) => m.parentId === prov.id).map((m) => m.id)
-    )
-  );
-  municipalities
-    .filter((m) => !coveredMuniIds.has(m.id))
-    .forEach((m) => {
-      crumbs.push(['Canada', '...', m.name]);
-    });
-
-  return crumbs;
+  // Document responses carry only {id, name, code, level} (no parentId), so each
+  // jurisdiction is shown as a path from Canada, ordered federal → provincial → municipal.
+  const order: Record<string, number> = { federal: 0, provincial: 1, territorial: 1, municipal: 2 };
+  return [...doc.jurisdictions]
+    .sort((a, b) => (order[a.level] ?? 3) - (order[b.level] ?? 3) || a.name.localeCompare(b.name))
+    .map((j) => (j.level === 'federal' ? ['Canada'] : ['Canada', j.name]));
 }

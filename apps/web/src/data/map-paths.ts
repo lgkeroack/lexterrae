@@ -1,122 +1,128 @@
 /**
- * Simplified SVG path data for the Canada map.
- * Each province/territory has an approximate outline path, center coordinates for labels,
- * and whether it's a territory (for styling with dashed borders).
+ * Simplified SVG path data for the Canada jurisdiction map.
+ * Each province/territory has an approximate outline path and a label anchor.
+ * Codes match the jurisdiction `code` column seeded by the API (apps/api/prisma/seed.ts).
  */
 export interface ProvinceMapData {
   code: string;
   name: string;
   path: string;
-  labelX: number;
-  labelY: number;
-  isTerritory: boolean;
+  /** Label anchor in SVG user units */
+  center: [number, number];
+  level: 'provincial' | 'territorial';
+  legalSystem: 'common_law' | 'civil_law';
 }
 
-// SVG viewBox is 0 0 1000 700
-// Paths are simplified representations of Canadian provinces/territories
+// SVG viewBox is 0 0 870 520
+export const MAP_VIEWBOX = { width: 870, height: 520 };
+
 export const PROVINCE_MAP_DATA: ProvinceMapData[] = [
-  {
-    code: 'BC',
-    name: 'British Columbia',
-    path: 'M80,250 L80,180 L100,140 L120,120 L110,100 L130,80 L150,90 L160,110 L170,130 L180,160 L190,180 L200,200 L200,250 L195,280 L185,310 L175,340 L160,360 L140,370 L110,360 L90,340 L80,310 Z',
-    labelX: 140,
-    labelY: 230,
-    isTerritory: false,
-  },
-  {
-    code: 'AB',
-    name: 'Alberta',
-    path: 'M200,200 L200,130 L210,110 L230,100 L260,100 L270,120 L270,200 L270,280 L270,340 L260,360 L240,370 L220,370 L200,360 L195,340 L195,280 Z',
-    labelX: 235,
-    labelY: 240,
-    isTerritory: false,
-  },
-  {
-    code: 'SK',
-    name: 'Saskatchewan',
-    path: 'M270,120 L270,100 L300,90 L330,90 L350,100 L350,120 L350,200 L350,280 L350,340 L340,360 L320,370 L300,370 L280,370 L270,340 L270,280 L270,200 Z',
-    labelX: 310,
-    labelY: 240,
-    isTerritory: false,
-  },
-  {
-    code: 'MB',
-    name: 'Manitoba',
-    path: 'M350,120 L350,100 L380,85 L410,80 L430,90 L440,110 L440,200 L435,250 L430,300 L420,340 L410,360 L390,370 L370,370 L350,340 L350,280 L350,200 Z',
-    labelX: 395,
-    labelY: 240,
-    isTerritory: false,
-  },
-  {
-    code: 'ON',
-    name: 'Ontario',
-    path: 'M440,110 L460,90 L490,80 L520,85 L550,95 L570,110 L580,130 L590,160 L600,190 L610,220 L600,260 L585,300 L570,330 L555,360 L540,380 L520,400 L500,410 L480,400 L460,390 L445,370 L430,350 L420,320 L425,280 L430,240 L435,200 L440,160 Z',
-    labelX: 510,
-    labelY: 260,
-    isTerritory: false,
-  },
-  {
-    code: 'QC',
-    name: 'Quebec',
-    path: 'M590,160 L610,130 L630,110 L660,90 L690,80 L720,75 L740,80 L750,100 L755,130 L750,170 L740,210 L730,250 L710,280 L690,310 L670,340 L650,360 L630,370 L610,370 L590,355 L575,330 L570,300 L580,260 L590,220 L595,190 Z',
-    labelX: 670,
-    labelY: 220,
-    isTerritory: false,
-  },
-  {
-    code: 'NB',
-    name: 'New Brunswick',
-    path: 'M750,310 L760,290 L775,280 L790,285 L800,300 L805,320 L800,340 L790,355 L775,360 L760,355 L750,340 Z',
-    labelX: 777,
-    labelY: 320,
-    isTerritory: false,
-  },
-  {
-    code: 'NS',
-    name: 'Nova Scotia',
-    path: 'M790,340 L810,330 L830,325 L850,330 L860,345 L855,360 L840,370 L820,375 L800,370 L790,355 Z',
-    labelX: 825,
-    labelY: 350,
-    isTerritory: false,
-  },
-  {
-    code: 'PE',
-    name: 'Prince Edward Island',
-    path: 'M805,295 L820,290 L835,293 L840,302 L835,310 L820,312 L808,308 Z',
-    labelX: 822,
-    labelY: 302,
-    isTerritory: false,
-  },
-  {
-    code: 'NL',
-    name: 'Newfoundland and Labrador',
-    path: 'M760,180 L780,160 L800,150 L820,155 L840,170 L850,190 L855,215 L850,240 L835,260 L815,270 L795,270 L775,260 L760,240 L755,215 Z',
-    labelX: 805,
-    labelY: 215,
-    isTerritory: false,
-  },
+  // Territories (north)
   {
     code: 'YT',
     name: 'Yukon',
-    path: 'M80,30 L80,80 L100,100 L130,80 L150,70 L170,60 L190,50 L200,40 L200,20 L180,10 L150,5 L120,10 L95,20 Z',
-    labelX: 140,
-    labelY: 50,
-    isTerritory: true,
+    path: 'M80,30 L160,30 L160,180 L140,200 L80,200 Z',
+    center: [120, 115],
+    level: 'territorial',
+    legalSystem: 'common_law',
   },
   {
     code: 'NT',
     name: 'Northwest Territories',
-    path: 'M200,20 L200,40 L210,60 L230,80 L260,90 L300,85 L340,80 L380,70 L410,60 L430,50 L440,40 L440,25 L420,15 L390,8 L350,5 L310,5 L270,8 L240,12 Z',
-    labelX: 320,
-    labelY: 45,
-    isTerritory: true,
+    path: 'M165,30 L370,30 L400,80 L380,140 L350,180 L300,210 L250,200 L200,210 L165,200 L165,180 Z',
+    center: [280, 120],
+    level: 'territorial',
+    legalSystem: 'common_law',
   },
   {
     code: 'NU',
     name: 'Nunavut',
-    path: 'M440,25 L440,40 L450,60 L470,75 L500,80 L540,85 L580,90 L620,85 L660,75 L690,60 L700,40 L700,25 L680,12 L640,5 L600,3 L560,5 L520,8 L480,15 Z',
-    labelX: 570,
-    labelY: 45,
-    isTerritory: true,
+    path: 'M375,30 L580,30 L620,60 L650,30 L700,50 L680,100 L620,130 L660,170 L630,210 L570,190 L530,220 L480,200 L450,230 L405,200 L385,140 L405,80 Z',
+    center: [540, 130],
+    level: 'territorial',
+    legalSystem: 'common_law',
+  },
+  // Western provinces
+  {
+    code: 'BC',
+    name: 'British Columbia',
+    path: 'M50,205 L80,205 L140,205 L155,210 L160,260 L170,290 L150,340 L130,380 L100,420 L70,440 L50,410 L40,360 L45,300 Z',
+    center: [105, 320],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  {
+    code: 'AB',
+    name: 'Alberta',
+    path: 'M160,210 L250,210 L250,420 L160,420 L150,340 L170,290 L160,260 Z',
+    center: [205, 320],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  {
+    code: 'SK',
+    name: 'Saskatchewan',
+    path: 'M255,215 L350,215 L350,420 L255,420 Z',
+    center: [302, 320],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  {
+    code: 'MB',
+    name: 'Manitoba',
+    path: 'M355,215 L450,215 L460,250 L445,300 L455,350 L450,420 L355,420 Z',
+    center: [405, 320],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  // Central provinces
+  {
+    code: 'ON',
+    name: 'Ontario',
+    path: 'M455,215 L530,225 L560,250 L580,300 L590,350 L600,400 L620,450 L600,480 L560,500 L520,490 L490,470 L470,440 L455,420 Z',
+    center: [525, 370],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  {
+    code: 'QC',
+    name: 'Quebec',
+    path: 'M565,200 L630,215 L680,180 L720,200 L740,250 L730,300 L710,350 L690,390 L660,420 L630,450 L605,470 L565,500 L560,460 L575,420 L585,380 L595,350 L585,300 L565,250 Z',
+    center: [650, 330],
+    level: 'provincial',
+    legalSystem: 'civil_law',
+  },
+  // Atlantic provinces
+  {
+    code: 'NL',
+    name: 'Newfoundland and Labrador',
+    path: 'M725,200 L780,180 L800,200 L790,250 L770,280 L745,260 L725,240 Z M760,300 L810,290 L830,310 L820,350 L790,370 L760,350 Z',
+    center: [785, 320],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  {
+    code: 'NB',
+    name: 'New Brunswick',
+    path: 'M680,420 L720,410 L740,430 L730,465 L700,475 L680,460 Z',
+    center: [710, 443],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  {
+    code: 'NS',
+    name: 'Nova Scotia',
+    path: 'M720,470 L740,465 L780,470 L800,485 L790,500 L760,505 L730,495 Z',
+    center: [760, 487],
+    level: 'provincial',
+    legalSystem: 'common_law',
+  },
+  {
+    code: 'PE',
+    name: 'Prince Edward Island',
+    path: 'M745,440 L775,435 L780,448 L750,452 Z',
+    center: [762, 444],
+    level: 'provincial',
+    legalSystem: 'common_law',
   },
 ];

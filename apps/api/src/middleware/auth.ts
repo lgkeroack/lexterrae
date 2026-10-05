@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
+import { env, JWT_AUDIENCE, JWT_ISSUER } from '../config/env.js';
 import { AuthenticationError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
 
@@ -32,8 +32,8 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     return;
   }
 
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+  const parts = authHeader.trim().split(/\s+/);
+  if (parts.length !== 2 || parts[0]!.toLowerCase() !== 'bearer') {
     next(new AuthenticationError('Invalid Authorization header format. Expected: Bearer <token>'));
     return;
   }
@@ -41,7 +41,12 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
   const token = parts[1]!;
 
   try {
-    const decoded = jwt.verify(token, env.JWT_SECRET) as unknown as JwtPayload;
+    // SECURITY: Pin the algorithm and validate issuer/audience claims set at signing time
+    const decoded = jwt.verify(token, env.JWT_SECRET, {
+      algorithms: ['HS256'],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    }) as unknown as JwtPayload;
 
     if (!decoded.userId) {
       next(new AuthenticationError('Invalid token: missing userId'));
@@ -65,7 +70,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
         message: 'Token expired',
         requestId: req.requestId,
       });
-      next(new AuthenticationError('Token has expired'));
+      next(new AuthenticationError('Your session has expired. Please sign in again.'));
       return;
     }
 

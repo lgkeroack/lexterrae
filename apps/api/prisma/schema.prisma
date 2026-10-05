@@ -36,19 +36,20 @@ model Document {
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt        DateTime? @map("deleted_at") @db.Timestamptz
 
-  user          User                   @relation(fields: [userId], references: [id])
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   jurisdictions DocumentJurisdiction[]
 
   @@index([userId])
   @@index([uploadedAt(sort: Desc)])
   @@index([userId, uploadedAt(sort: Desc)])
+  @@index([deletedAt])
   @@map("documents")
 }
 
 model Jurisdiction {
   id          String   @id @default(uuid()) @db.Uuid
   name        String   @db.VarChar(100)
-  code        String   @unique @db.VarChar(20)
+  code        String   @unique @db.VarChar(50)
   level       String   @db.VarChar(20)
   parentId    String?  @map("parent_id") @db.Uuid
   legalSystem String   @map("legal_system") @db.VarChar(20)
@@ -92,7 +93,8 @@ model AuditLog {
   outcome       String   @db.Text
   failureReason String?  @map("failure_reason") @db.Text
 
-  actor User? @relation(fields: [actorUserId], references: [id])
+  // Audit history outlives the account: deleting a user keeps their entries, unlinked.
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([timestamp(sort: Desc)])
   @@index([actorUserId, timestamp(sort: Desc)])

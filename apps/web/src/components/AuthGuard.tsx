@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../stores/authStore';
 import { LoadingSpinner } from './common/LoadingSpinner';
 
@@ -8,27 +8,25 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
-  const { isAuthenticated, isLoading, refreshToken } = useAuthStore();
-  const navigate = useNavigate();
+  const status = useAuthStore((s) => s.status);
+  const initialize = useAuthStore((s) => s.initialize);
+  const location = useLocation();
 
   useEffect(() => {
-    if (!isAuthenticated && !isLoading) {
-      refreshToken().catch(() => {
-        navigate('/login', { replace: true });
-      });
-    }
-  }, [isAuthenticated, isLoading, refreshToken, navigate]);
+    if (status === 'checking') void initialize();
+  }, [status, initialize]);
 
-  if (isLoading) {
+  if (status === 'checking') {
     return (
       <div className="flex h-screen items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadingSpinner size="lg" label="Restoring your session" />
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    return null;
+  if (status === 'unauthenticated') {
+    // Remember where the user was headed so login can send them back.
+    return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
   return <>{children}</>;

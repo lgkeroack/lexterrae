@@ -6,4 +6,27 @@
   body {
     @apply min-h-screen;
   }
+
+  /* Fallback visible focus indicator for any interactive element that
+     doesn't define its own focus-visible styles. */
+  :focus-visible {
+    outline: 2px solid theme('colors.blue.600');
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* Keep loading spinners turning (slowly) so progress is still conveyed. */
+  .animate-spin {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
+  }
 }

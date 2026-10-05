@@ -17,8 +17,18 @@ export interface JurisdictionNode {
   legalSystem: string;
   geoCode: string | null;
   population: number | null;
+  createdAt: Date;
   children: JurisdictionNode[];
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const LEVEL_ORDER: Record<string, number> = {
+  federal: 0,
+  provincial: 1,
+  territorial: 2,
+  municipal: 3,
+};
 
 export class JurisdictionService {
   /**
@@ -42,9 +52,11 @@ export class JurisdictionService {
     }
 
     // Fetch all jurisdictions from DB
-    const jurisdictions = await prisma.jurisdiction.findMany({
-      orderBy: [{ level: 'asc' }, { name: 'asc' }],
-    });
+    // Order siblings by hierarchy level (federal, provincial, territorial, municipal), then name.
+    // (Ordering by the level string in SQL would put "municipal" before "provincial".)
+    const jurisdictions = (await prisma.jurisdiction.findMany({ orderBy: { name: 'asc' } })).sort(
+      (a, b) => (LEVEL_ORDER[a.level] ?? 99) - (LEVEL_ORDER[b.level] ?? 99),
+    );
 
     // Build tree structure
     const nodeMap = new Map<string, JurisdictionNode>();
@@ -61,6 +73,7 @@ export class JurisdictionService {
         legalSystem: j.legalSystem,
         geoCode: j.geoCode,
         population: j.population,
+        createdAt: j.createdAt,
         children: [],
       });
     }
@@ -136,12 +149,108 @@ export class JurisdictionService {
   }
 
   /**
+   * Returns provinces/territories with their municipalities, in the shape of the shared
+   * `ProvinceData` type (used by the web map / upload picker).
+   */
+  async getProvinces(): Promise<
+    {
+      id: string;
+      name: string;
+      code: string;
+      level: string;
+      legalSystem: string;
+      municipalities: { id: string; name: string; code: string }[];
+    }[]
+  > {
+    const tree = await this.getJurisdictionTree();
+    const result: Awaited<ReturnType<JurisdictionService['getProvinces']>> = [];
+    const visit = (nodes: JurisdictionNode[]) => {
+      for (const n of nodes) {
+        if (n.level === 'provincial' || n.level === 'territorial') {
+          result.push({
+            id: n.id,
+            name: n.name,
+            code: n.code,
+            level: n.level,
+            legalSystem: n.legalSystem,
+            municipalities: n.children
+              .filter((c) => c.level === 'municipal')
+              .map((c) => ({ id: c.id, name: c.name, code: c.code })),
+          });
+        } else {
+          visit(n.children);
+        }
+      }
+    };
+    visit(tree);
+    return result.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Returns the given jurisdiction ID plus the IDs of all of its descendants
+   * (e.g. a province and all of its municipalities).
+   */
+  async getSelfAndDescendantIds(id: string): Promise<string[]> {
+    const all = await prisma.jurisdiction.findMany({ select: { id: true, parentId: true } });
+    const childrenByParent = new Map<string, string[]>();
+    for (const j of all) {
+      if (!j.parentId) continue;
+      const list = childrenByParent.get(j.parentId) ?? [];
+      list.push(j.id);
+      childrenByParent.set(j.parentId, list);
+    }
+    const result: string[] = [];
+    const seen = new Set<string>();
+    const stack = [id];
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      result.push(current);
+      stack.push(...(childrenByParent.get(current) ?? []));
+    }
+    return result;
+  }
+
+  /**
+   * Resolves jurisdiction references (UUIDs or codes such as "BC" / "BC-VANCOUVER") to
+   * jurisdiction records. Throws a ValidationError listing any that do not exist.
+   */
+  async resolveJurisdictionRefs(
+    refs: string[],
+  ): Promise<{ id: string; name: string; code: string; level: string }[]> {
+    const uniqueRefs = [...new Set(refs)];
+    const ids = uniqueRefs.filter((r) => UUID_RE.test(r)).map((r) => r.toLowerCase());
+    const codes = uniqueRefs.filter((r) => !UUID_RE.test(r)).map((r) => r.toUpperCase());
+
+    const jurisdictions = await prisma.jurisdiction.findMany({
+      where: { OR: [{ id: { in: ids } }, { code: { in: codes } }] },
+      select: { id: true, name: true, code: true, level: true },
+    });
+
+    const foundIds = new Set(jurisdictions.map((j) => j.id));
+    const foundCodes = new Set(jurisdictions.map((j) => j.code.toUpperCase()));
+    const missing = [
+      ...ids.filter((id) => !foundIds.has(id)),
+      ...codes.filter((c) => !foundCodes.has(c)),
+    ];
+    if (missing.length > 0) {
+      throw new ValidationError(
+        `The following jurisdictions were not found: ${missing.join(', ')}`,
+      );
+    }
+
+    // De-duplicate in case the same jurisdiction was referenced by both ID and code
+    return [...new Map(jurisdictions.map((j) => [j.id, j])).values()];
+  }
+
+  /**
    * Batch lookup: validates that all provided IDs exist and returns the jurisdictions.
    * Throws a ValidationError if any IDs are not found.
    */
-  async getJurisdictionsByIds(ids: string[]): Promise<
-    { id: string; name: string; code: string; level: string }[]
-  > {
+  async getJurisdictionsByIds(
+    ids: string[],
+  ): Promise<{ id: string; name: string; code: string; level: string }[]> {
     if (ids.length === 0) {
       return [];
     }

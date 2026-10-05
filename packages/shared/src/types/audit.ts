@@ -1,7 +1,12 @@
 export type AuditAction =
+  | 'auth.register'
+  | 'auth.login'
+  | 'auth.login_failed'
+  | 'auth.logout'
   | 'document.upload'
   | 'document.update'
   | 'document.delete'
+  | 'document.purge'
   | 'document.download'
   | 'document.jurisdiction_assign'
   | 'document.jurisdiction_remove'
@@ -19,7 +24,8 @@ export interface AuditLogEntry {
   action: AuditAction;
   resourceType: 'document' | 'user' | 'jurisdiction_assignment';
   resourceId: string;
-  changes: AuditChange[] | null;
+  /** Free-form JSON; document.update stores { field: { from, to } }. */
+  changes: Record<string, unknown> | null;
   requestId: string;
   outcome: 'success' | 'failure';
   failureReason: string | null;

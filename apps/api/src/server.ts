@@ -1,18 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-try {
-  const envFile = readFileSync(resolve(process.cwd(), '.env'), 'utf-8');
-  for (const line of envFile.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eqIdx = trimmed.indexOf('=');
-    if (eqIdx === -1) continue;
-    const key = trimmed.slice(0, eqIdx).trim();
-    const value = trimmed.slice(eqIdx + 1).trim();
-    if (!process.env[key]) process.env[key] = value;
-  }
-} catch { /* .env file not found, use system env */ }
-
+// NOTE: .env loading happens in config/env.ts — ES module imports are hoisted, so it
+// cannot be done at the top of this file.
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -22,11 +9,12 @@ import { logger } from './lib/logger.js';
 import { prisma } from './config/database.js';
 import { redis } from './config/redis.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
-import { errorHandler } from './middleware/error-handler.js';
+import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.js';
 import documentsRouter from './routes/documents.js';
 import jurisdictionsRouter from './routes/jurisdictions.js';
+import { retentionService } from './services/retention.service.js';
 
 const app: ReturnType<typeof express> = express();
 
@@ -62,10 +50,11 @@ app.use(
   }),
 );
 
-// SECURITY: Restrict CORS to known origins in production
+// SECURITY: Only allow credentialed cross-origin requests from configured web origins (CORS_ORIGIN).
+// The web app normally calls the API same-origin (Vite proxy / reverse proxy), which needs no CORS.
 app.use(
   cors({
-    origin: env.NODE_ENV === 'production' ? false : true,
+    origin: env.CORS_ORIGIN,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
@@ -73,12 +62,7 @@ app.use(
   }),
 );
 
-// Body parsing with strict limits
-app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-
-// Request ID
+// Request ID (before body parsing so parse errors are still correlated)
 app.use(requestIdMiddleware);
 
 // Request logging
@@ -106,11 +90,19 @@ app.use((req, res, next) => {
   next();
 });
 
+// Body parsing with strict limits
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
+app.use(cookieParser());
+
 // Routes
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/jurisdictions', jurisdictionsRouter);
+
+// Unknown API routes return a JSON 404 instead of Express's HTML page
+app.use(notFoundHandler);
 
 // Global error handler (must be last)
 app.use(errorHandler);
@@ -124,9 +116,65 @@ const server = app.listen(env.PORT, () => {
   });
 });
 
+server.on('error', (err: NodeJS.ErrnoException) => {
+  const message =
+    err.code === 'EADDRINUSE'
+      ? `Port ${env.PORT} is already in use. Stop the other process or set PORT to a free port.`
+      : `HTTP server error: ${err.message}`;
+  logger.fatal({ module: 'server', message, error: { name: err.name, code: err.code } });
+  process.exit(1);
+});
+
+// Surface startup dependency problems clearly (the server still starts; /api/health reports status)
+prisma.$connect().catch((err: unknown) => {
+  logger.error({
+    module: 'server',
+    message:
+      'Could not connect to the database at startup. Check DATABASE_URL and that Postgres is running.',
+    error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
+  });
+});
+redis.connect().catch(() => {
+  // Error already logged by the redis 'error' listener; ioredis keeps retrying in the background
+});
+
+// Permanently remove documents past their soft-delete retention period.
+// First run shortly after startup, then every 6 hours; never keeps the process alive.
+const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+function runRetentionPurge() {
+  retentionService.purgeExpiredDocuments().catch((err: unknown) => {
+    logger.error({
+      module: 'server',
+      message: 'Retention purge failed',
+      error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
+    });
+  });
+}
+const purgeTimers =
+  env.NODE_ENV === 'test'
+    ? []
+    : [
+        setTimeout(runRetentionPurge, 60_000).unref(),
+        setInterval(runRetentionPurge, PURGE_INTERVAL_MS).unref(),
+      ];
+
 // Graceful shutdown
+let shuttingDown = false;
+
 async function gracefulShutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  purgeTimers.forEach((timer) => clearTimeout(timer));
   logger.info({ module: 'server', message: `Received ${signal}. Starting graceful shutdown...` });
+
+  // Force shutdown after 10 seconds (unref so it never keeps the process alive by itself)
+  setTimeout(() => {
+    logger.error({ module: 'server', message: 'Forced shutdown after timeout' });
+    process.exit(1);
+  }, 10_000).unref();
+
+  // Close idle keep-alive sockets so server.close() is not held open by idle clients
+  server.closeIdleConnections();
 
   server.close(async () => {
     logger.info({ module: 'server', message: 'HTTP server closed' });
@@ -139,7 +187,8 @@ async function gracefulShutdown(signal: string) {
     }
 
     try {
-      await redis.quit();
+      if (redis.status === 'ready') await redis.quit();
+      else redis.disconnect();
       logger.info({ module: 'server', message: 'Redis connection closed' });
     } catch (err) {
       logger.error({ module: 'server', message: 'Error disconnecting from Redis', error: err });
@@ -148,15 +197,20 @@ async function gracefulShutdown(signal: string) {
     logger.info({ module: 'server', message: 'Graceful shutdown complete' });
     process.exit(0);
   });
-
-  // Force shutdown after 10 seconds
-  setTimeout(() => {
-    logger.error({ module: 'server', message: 'Forced shutdown after timeout' });
-    process.exit(1);
-  }, 10_000);
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+
+process.on('unhandledRejection', (reason) => {
+  logger.error({
+    module: 'server',
+    message: 'Unhandled promise rejection',
+    error:
+      reason instanceof Error
+        ? { name: reason.name, message: reason.message, stack: reason.stack }
+        : String(reason),
+  });
+});
 
 export { app, server };

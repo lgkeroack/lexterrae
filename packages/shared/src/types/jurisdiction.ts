@@ -1,6 +1,6 @@
 export type JurisdictionLevel = 'federal' | 'provincial' | 'territorial' | 'municipal';
 
-export type LegalSystem = 'common_law' | 'civil_law';
+export type LegalSystem = 'common_law' | 'civil_law' | 'bijural';
 
 export interface Jurisdiction {
   id: string;
@@ -18,7 +18,9 @@ export interface JurisdictionTreeNode extends Jurisdiction {
   children: JurisdictionTreeNode[];
 }
 
+/** Shape returned by GET /api/jurisdictions/provinces (wrapped in { data }). */
 export interface ProvinceData {
+  id?: string;
   name: string;
   code: string;
   level: 'provincial' | 'territorial';
@@ -27,6 +29,7 @@ export interface ProvinceData {
 }
 
 export interface MunicipalityData {
+  id?: string;
   name: string;
   code: string;
 }

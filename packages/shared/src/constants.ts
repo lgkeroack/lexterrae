@@ -1,8 +1,33 @@
 export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 export const MAX_FILE_SIZE_MB = 50;
 
-export const ALLOWED_MIME_TYPES = ['application/pdf', 'text/plain'] as const;
-export const ALLOWED_EXTENSIONS = ['.pdf', '.txt'] as const;
+/** Must stay in sync with apps/api/src/services/file.service.ts (server validates by magic bytes). */
+export const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'text/plain',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/csv',
+  'application/rtf',
+  'text/rtf',
+  'image/png',
+  'image/jpeg',
+] as const;
+export const ALLOWED_EXTENSIONS = [
+  '.pdf',
+  '.txt',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.csv',
+  '.rtf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+] as const;
 
 export const MAX_TITLE_LENGTH = 255;
 export const MAX_DESCRIPTION_LENGTH = 2000;

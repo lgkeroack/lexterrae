@@ -1,187 +1,142 @@
-import type { ProvinceData } from '@lexterrae/shared';
+import type { ProvinceData, LegalSystem } from '@lexterrae/shared';
+
+/**
+ * Static fallback list of provinces/territories and their municipalities.
+ *
+ * The authoritative list (with database UUIDs) is loaded from GET /api/jurisdictions;
+ * this list is only used to render the picker before/if that request fails.
+ * Names mirror apps/api/prisma/seed.ts, and codes are derived with the same rule the
+ * seed uses so that local codes line up with the API's `code` column.
+ */
+
+/** Code of the federal jurisdiction ("Canada") in the seed data. */
+export const FEDERAL_CODE = 'CA';
+
+/** Same derivation as `municipalityCode()` in apps/api/prisma/seed.ts. */
+export function municipalityCode(provinceCode: string, cityName: string): string {
+  const slug = cityName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['\u2019]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return `${provinceCode}-${slug}`;
+}
+
+function province(
+  name: string,
+  code: string,
+  level: ProvinceData['level'],
+  legalSystem: LegalSystem,
+  municipalities: string[],
+): ProvinceData {
+  return {
+    name,
+    code,
+    level,
+    legalSystem,
+    municipalities: municipalities.map((m) => ({ name: m, code: municipalityCode(code, m) })),
+  };
+}
 
 export const PROVINCES: ProvinceData[] = [
-  {
-    name: 'British Columbia',
-    code: 'BC',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Vancouver', code: 'BC-VANCOUVER' },
-      { name: 'Victoria', code: 'BC-VICTORIA' },
-      { name: 'Surrey', code: 'BC-SURREY' },
-      { name: 'Burnaby', code: 'BC-BURNABY' },
-      { name: 'Richmond', code: 'BC-RICHMOND' },
-      { name: 'Kelowna', code: 'BC-KELOWNA' },
-      { name: 'Kamloops', code: 'BC-KAMLOOPS' },
-      { name: 'Nanaimo', code: 'BC-NANAIMO' },
-      { name: 'Squamish', code: 'BC-SQUAMISH' },
-      { name: 'Whistler', code: 'BC-WHISTLER' },
-      { name: 'Prince George', code: 'BC-PRINCE_GEORGE' },
-      { name: 'Abbotsford', code: 'BC-ABBOTSFORD' },
-    ],
-  },
-  {
-    name: 'Alberta',
-    code: 'AB',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Calgary', code: 'AB-CALGARY' },
-      { name: 'Edmonton', code: 'AB-EDMONTON' },
-      { name: 'Red Deer', code: 'AB-RED_DEER' },
-      { name: 'Lethbridge', code: 'AB-LETHBRIDGE' },
-      { name: 'Medicine Hat', code: 'AB-MEDICINE_HAT' },
-      { name: 'Grande Prairie', code: 'AB-GRANDE_PRAIRIE' },
-      { name: 'St. Albert', code: 'AB-ST_ALBERT' },
-      { name: 'Airdrie', code: 'AB-AIRDRIE' },
-    ],
-  },
-  {
-    name: 'Saskatchewan',
-    code: 'SK',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Regina', code: 'SK-REGINA' },
-      { name: 'Saskatoon', code: 'SK-SASKATOON' },
-      { name: 'Prince Albert', code: 'SK-PRINCE_ALBERT' },
-      { name: 'Moose Jaw', code: 'SK-MOOSE_JAW' },
-      { name: 'Swift Current', code: 'SK-SWIFT_CURRENT' },
-    ],
-  },
-  {
-    name: 'Manitoba',
-    code: 'MB',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Winnipeg', code: 'MB-WINNIPEG' },
-      { name: 'Brandon', code: 'MB-BRANDON' },
-      { name: 'Thompson', code: 'MB-THOMPSON' },
-      { name: 'Steinbach', code: 'MB-STEINBACH' },
-      { name: 'Portage la Prairie', code: 'MB-PORTAGE_LA_PRAIRIE' },
-    ],
-  },
-  {
-    name: 'Ontario',
-    code: 'ON',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Toronto', code: 'ON-TORONTO' },
-      { name: 'Ottawa', code: 'ON-OTTAWA' },
-      { name: 'Mississauga', code: 'ON-MISSISSAUGA' },
-      { name: 'Brampton', code: 'ON-BRAMPTON' },
-      { name: 'Hamilton', code: 'ON-HAMILTON' },
-      { name: 'London', code: 'ON-LONDON' },
-      { name: 'Markham', code: 'ON-MARKHAM' },
-      { name: 'Vaughan', code: 'ON-VAUGHAN' },
-      { name: 'Kitchener', code: 'ON-KITCHENER' },
-      { name: 'Windsor', code: 'ON-WINDSOR' },
-      { name: 'Richmond Hill', code: 'ON-RICHMOND_HILL' },
-      { name: 'Oakville', code: 'ON-OAKVILLE' },
-      { name: 'Burlington', code: 'ON-BURLINGTON' },
-    ],
-  },
-  {
-    name: 'Quebec',
-    code: 'QC',
-    level: 'provincial',
-    legalSystem: 'civil_law',
-    municipalities: [
-      { name: 'Montréal', code: 'QC-MONTREAL' },
-      { name: 'Québec City', code: 'QC-QUEBEC_CITY' },
-      { name: 'Laval', code: 'QC-LAVAL' },
-      { name: 'Gatineau', code: 'QC-GATINEAU' },
-      { name: 'Longueuil', code: 'QC-LONGUEUIL' },
-      { name: 'Sherbrooke', code: 'QC-SHERBROOKE' },
-      { name: 'Lévis', code: 'QC-LEVIS' },
-      { name: 'Saguenay', code: 'QC-SAGUENAY' },
-      { name: 'Trois-Rivières', code: 'QC-TROIS_RIVIERES' },
-    ],
-  },
-  {
-    name: 'New Brunswick',
-    code: 'NB',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Fredericton', code: 'NB-FREDERICTON' },
-      { name: 'Saint John', code: 'NB-SAINT_JOHN' },
-      { name: 'Moncton', code: 'NB-MONCTON' },
-      { name: 'Dieppe', code: 'NB-DIEPPE' },
-      { name: 'Riverview', code: 'NB-RIVERVIEW' },
-    ],
-  },
-  {
-    name: 'Nova Scotia',
-    code: 'NS',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Halifax', code: 'NS-HALIFAX' },
-      { name: 'Cape Breton', code: 'NS-CAPE_BRETON' },
-      { name: 'Dartmouth', code: 'NS-DARTMOUTH' },
-      { name: 'Truro', code: 'NS-TRURO' },
-      { name: 'New Glasgow', code: 'NS-NEW_GLASGOW' },
-    ],
-  },
-  {
-    name: 'Prince Edward Island',
-    code: 'PE',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Charlottetown', code: 'PE-CHARLOTTETOWN' },
-      { name: 'Summerside', code: 'PE-SUMMERSIDE' },
-      { name: 'Stratford', code: 'PE-STRATFORD' },
-      { name: 'Cornwall', code: 'PE-CORNWALL' },
-    ],
-  },
-  {
-    name: 'Newfoundland and Labrador',
-    code: 'NL',
-    level: 'provincial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: "St. John's", code: 'NL-ST_JOHNS' },
-      { name: 'Mount Pearl', code: 'NL-MOUNT_PEARL' },
-      { name: 'Corner Brook', code: 'NL-CORNER_BROOK' },
-      { name: 'Conception Bay South', code: 'NL-CONCEPTION_BAY_SOUTH' },
-      { name: 'Paradise', code: 'NL-PARADISE' },
-    ],
-  },
-  {
-    name: 'Yukon',
-    code: 'YT',
-    level: 'territorial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Whitehorse', code: 'YT-WHITEHORSE' },
-      { name: 'Dawson City', code: 'YT-DAWSON_CITY' },
-    ],
-  },
-  {
-    name: 'Northwest Territories',
-    code: 'NT',
-    level: 'territorial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Yellowknife', code: 'NT-YELLOWKNIFE' },
-      { name: 'Hay River', code: 'NT-HAY_RIVER' },
-      { name: 'Inuvik', code: 'NT-INUVIK' },
-    ],
-  },
-  {
-    name: 'Nunavut',
-    code: 'NU',
-    level: 'territorial',
-    legalSystem: 'common_law',
-    municipalities: [
-      { name: 'Iqaluit', code: 'NU-IQALUIT' },
-      { name: 'Rankin Inlet', code: 'NU-RANKIN_INLET' },
-      { name: 'Arviat', code: 'NU-ARVIAT' },
-    ],
-  },
+  province('Alberta', 'AB', 'provincial', 'common_law', [
+    'Calgary',
+    'Edmonton',
+    'Red Deer',
+    'Lethbridge',
+    'Medicine Hat',
+    'Grande Prairie',
+    'St. Albert',
+    'Airdrie',
+  ]),
+  province('British Columbia', 'BC', 'provincial', 'common_law', [
+    'Vancouver',
+    'Victoria',
+    'Surrey',
+    'Burnaby',
+    'Richmond',
+    'Kelowna',
+    'Kamloops',
+    'Nanaimo',
+    'Squamish',
+    'Whistler',
+    'Prince George',
+    'Abbotsford',
+  ]),
+  province('Manitoba', 'MB', 'provincial', 'common_law', [
+    'Winnipeg',
+    'Brandon',
+    'Thompson',
+    'Steinbach',
+    'Portage la Prairie',
+  ]),
+  province('New Brunswick', 'NB', 'provincial', 'common_law', [
+    'Fredericton',
+    'Saint John',
+    'Moncton',
+    'Dieppe',
+    'Riverview',
+  ]),
+  province('Newfoundland and Labrador', 'NL', 'provincial', 'common_law', [
+    "St. John's",
+    'Mount Pearl',
+    'Corner Brook',
+    'Conception Bay South',
+    'Paradise',
+  ]),
+  province('Nova Scotia', 'NS', 'provincial', 'common_law', [
+    'Halifax',
+    'Cape Breton',
+    'Dartmouth',
+    'Truro',
+    'New Glasgow',
+  ]),
+  province('Ontario', 'ON', 'provincial', 'common_law', [
+    'Toronto',
+    'Ottawa',
+    'Mississauga',
+    'Brampton',
+    'Hamilton',
+    'London',
+    'Markham',
+    'Vaughan',
+    'Kitchener',
+    'Windsor',
+    'Richmond Hill',
+    'Oakville',
+    'Burlington',
+  ]),
+  province('Prince Edward Island', 'PE', 'provincial', 'common_law', [
+    'Charlottetown',
+    'Summerside',
+    'Stratford',
+    'Cornwall',
+  ]),
+  province('Quebec', 'QC', 'provincial', 'civil_law', [
+    'Montréal',
+    'Québec City',
+    'Laval',
+    'Gatineau',
+    'Longueuil',
+    'Sherbrooke',
+    'Lévis',
+    'Saguenay',
+    'Trois-Rivières',
+  ]),
+  province('Saskatchewan', 'SK', 'provincial', 'common_law', [
+    'Regina',
+    'Saskatoon',
+    'Prince Albert',
+    'Moose Jaw',
+    'Swift Current',
+  ]),
+  province('Northwest Territories', 'NT', 'territorial', 'common_law', [
+    'Yellowknife',
+    'Hay River',
+    'Inuvik',
+  ]),
+  province('Nunavut', 'NU', 'territorial', 'common_law', ['Iqaluit', 'Rankin Inlet', 'Arviat']),
+  province('Yukon', 'YT', 'territorial', 'common_law', ['Whitehorse', 'Dawson City']),
 ];

@@ -1,8 +1,18 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import {
+  Router,
+  type Request,
+  type Response,
+  type NextFunction,
+  type CookieOptions,
+} from 'express';
+import jwt from 'jsonwebtoken';
+import { env } from '../config/env.js';
 import { authService } from '../services/auth.service.js';
 import { auditService } from '../services/audit.service.js';
+import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { AuthenticationError } from '../lib/errors.js';
+import { loginLimiter, refreshLimiter, registerLimiter } from '../lib/rate-limit.js';
 import {
   registerSchema,
   loginSchema,
@@ -13,38 +23,33 @@ import {
 const router: ReturnType<typeof Router> = Router();
 
 /**
- * Rate limiter for login attempts: 10 requests per 15 minutes per IP.
+ * The refresh token is set as an httpOnly cookie scoped to the auth routes (and also
+ * returned in the body for clients that keep it themselves). Refresh/logout accept it
+ * from either the cookie or the JSON body.
  */
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    type: 'https://lexterrae.io/problems/rate-limit',
-    title: 'Too Many Requests',
-    status: 429,
-    detail: 'Too many login attempts. Please try again later.',
-    code: 'RATE_LIMIT_EXCEEDED',
-  },
-});
+const REFRESH_COOKIE = 'lt_refresh';
+const refreshCookieOptions: CookieOptions = {
+  httpOnly: true,
+  // Browsers only send Secure cookies over HTTPS; local dev runs over plain http
+  secure: env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test',
+  sameSite: 'strict',
+  path: '/api/auth',
+};
 
-/**
- * Rate limiter for registration: 5 requests per hour per IP.
- */
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    type: 'https://lexterrae.io/problems/rate-limit',
-    title: 'Too Many Requests',
-    status: 429,
-    detail: 'Too many registration attempts. Please try again later.',
-    code: 'RATE_LIMIT_EXCEEDED',
-  },
-});
+function setRefreshCookie(res: Response, refreshToken: string): void {
+  const { exp } = (jwt.decode(refreshToken) as { exp?: number } | null) ?? {};
+  res.cookie(REFRESH_COOKIE, refreshToken, {
+    ...refreshCookieOptions,
+    ...(exp ? { expires: new Date(exp * 1000) } : {}),
+  });
+}
+
+function readRefreshToken(req: Request): string | undefined {
+  const fromBody = (req.body as { refreshToken?: unknown } | undefined)?.refreshToken;
+  if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
+  const fromCookie = (req.cookies as Record<string, unknown> | undefined)?.[REFRESH_COOKIE];
+  return typeof fromCookie === 'string' && fromCookie.length > 0 ? fromCookie : undefined;
+}
 
 /**
  * POST /api/auth/register
@@ -69,6 +74,7 @@ router.post(
         outcome: 'success',
       });
 
+      setRefreshCookie(res, result.refreshToken);
       res.status(201).json({
         user: result.user,
         accessToken: result.accessToken,
@@ -103,6 +109,7 @@ router.post(
         outcome: 'success',
       });
 
+      setRefreshCookie(res, result.refreshToken);
       res.status(200).json({
         user: result.user,
         accessToken: result.accessToken,
@@ -116,21 +123,30 @@ router.post(
 
 /**
  * POST /api/auth/refresh
- * Refreshes access and refresh tokens using a valid refresh token.
+ * Rotates tokens using a valid refresh token (from the httpOnly cookie or the JSON body).
  */
 router.post(
   '/refresh',
+  refreshLimiter,
   validate({ body: refreshTokenSchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { refreshToken } = req.body;
+      const refreshToken = readRefreshToken(req);
+      if (!refreshToken) {
+        throw new AuthenticationError('No active session. Please sign in.');
+      }
       const tokens = await authService.refreshToken(refreshToken);
 
+      setRefreshCookie(res, tokens.refreshToken);
       res.status(200).json({
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
       });
     } catch (err) {
+      // A rejected refresh token should not keep being re-sent by the browser
+      if (err instanceof AuthenticationError) {
+        res.clearCookie(REFRESH_COOKIE, refreshCookieOptions);
+      }
       next(err);
     }
   },
@@ -138,21 +154,35 @@ router.post(
 
 /**
  * POST /api/auth/logout
- * Revokes the provided refresh token.
+ * Revokes the refresh token (cookie or body) and clears the cookie. Always succeeds.
  */
 router.post(
   '/logout',
+  refreshLimiter,
   validate({ body: logoutSchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const { refreshToken } = req.body;
-      await authService.logout(refreshToken);
+      await authService.logout(readRefreshToken(req));
 
+      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions);
       res.status(200).json({ message: 'Logged out successfully' });
     } catch (err) {
       next(err);
     }
   },
 );
+
+/**
+ * GET /api/auth/me
+ * Returns the authenticated user's profile (used to restore the session on page load).
+ */
+router.get('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const user = await authService.getUserById(req.context!.userId);
+    res.status(200).json({ user });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

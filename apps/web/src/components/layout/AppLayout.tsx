@@ -1,71 +1,146 @@
-import React, { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { NavLink, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom';
 import { FileText, Upload, LogOut, Menu, X, MapPin } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
+import { formatTitle } from '../common/useDocumentTitle';
+import { LoadingSpinner } from '../common/LoadingSpinner';
 
 const navItems = [
   { to: '/documents', label: 'Documents', icon: FileText },
   { to: '/upload', label: 'Upload', icon: Upload },
 ];
 
+// Default tab titles per route; pages may refine with useDocumentTitle().
+const routeTitles: { pattern: string; title: string }[] = [
+  { pattern: '/documents/:id', title: 'Document details' },
+  { pattern: '/documents', title: 'Documents' },
+  { pattern: '/upload', title: 'Upload document' },
+];
+
+function initials(name: string | undefined): string {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  return (
+    ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1]![0] : '')).toUpperCase() ||
+    '?'
+  );
+}
+
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Layout effect so a page's own useDocumentTitle (passive effect) wins.
+  useLayoutEffect(() => {
+    const match = routeTitles.find((r) => matchPath(r.pattern, location.pathname));
+    document.title = formatTitle(match?.title);
+  }, [location.pathname]);
+
+  // Close the mobile drawer and reset scroll when the route changes.
+  useEffect(() => {
+    setSidebarOpen(false);
+    mainRef.current?.scrollTo?.({ top: 0 });
+  }, [location.pathname]);
+
+  // Mobile drawer: Escape closes it, focus moves in on open and back on close.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    closeButtonRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSidebarOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [sidebarOpen]);
 
   const handleLogout = () => {
+    // Navigate first so AuthGuard doesn't record this page as the post-login target.
+    navigate('/login', { replace: true });
     logout();
   };
 
+  const closeSidebar = () => {
+    setSidebarOpen(false);
+    menuButtonRef.current?.focus();
+  };
+
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen h-dvh bg-gray-50">
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-md bg-white px-4 py-2 text-sm font-medium text-blue-700 shadow focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        Skip to main content
+      </a>
+
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-20 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={closeSidebar}
+          aria-hidden="true"
         />
       )}
 
       {/* Sidebar */}
       <aside
+        id="app-sidebar"
+        aria-label="Sidebar"
         className={`
-          fixed inset-y-0 left-0 z-30 w-64 transform bg-white shadow-lg
-          transition-transform duration-200 ease-in-out
-          lg:relative lg:translate-x-0
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          fixed inset-y-0 left-0 z-30 w-64 max-w-[85vw] transform bg-white shadow-lg
+          duration-200 ease-in-out
+          lg:visible lg:relative lg:translate-x-0 lg:shadow-none lg:border-r lg:border-gray-200
+          ${
+            // Becomes visible instantly on open (so focus can move in), but stays
+            // visible until the slide-out finishes on close. Hidden drawer links
+            // are removed from the tab order on mobile.
+            sidebarOpen
+              ? 'visible translate-x-0 transition-transform'
+              : 'invisible -translate-x-full transition-[transform,visibility]'
+          }
         `}
       >
         <div className="flex h-full flex-col">
           {/* Logo / Title */}
           <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-6">
-            <MapPin className="h-6 w-6 text-blue-600" />
-            <h1 className="text-xl font-bold text-gray-900">Lex Terrae</h1>
+            <MapPin className="h-6 w-6 text-blue-600" aria-hidden="true" />
+            <span className="text-xl font-bold text-gray-900">Lex Terrae</span>
             {/* Close button for mobile */}
             <button
-              className="ml-auto rounded-md p-1 text-gray-400 hover:bg-gray-100 lg:hidden"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close sidebar"
+              ref={closeButtonRef}
+              type="button"
+              className="-mr-2 ml-auto rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 lg:hidden"
+              onClick={closeSidebar}
+              aria-label="Close navigation menu"
             >
-              <X className="h-5 w-5" />
+              <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-1 px-3 py-4">
+          <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
             {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
-                onClick={() => setSidebarOpen(false)}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
+                  `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     isActive
                       ? 'bg-blue-50 text-blue-700'
                       : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
                   }`
                 }
               >
-                <item.icon className="h-5 w-5" />
+                <item.icon className="h-5 w-5" aria-hidden="true" />
                 {item.label}
               </NavLink>
             ))}
@@ -73,19 +148,30 @@ export function AppLayout() {
 
           {/* User info / Logout */}
           <div className="border-t border-gray-200 p-4">
-            <div className="mb-3">
-              <p className="truncate text-sm font-medium text-gray-900">
-                {user?.displayName || 'User'}
-              </p>
-              <p className="truncate text-xs text-gray-500">
-                {user?.email || ''}
-              </p>
+            <div className="mb-3 flex items-center gap-3">
+              <div
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700"
+                aria-hidden="true"
+              >
+                {initials(user?.displayName)}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-gray-900">
+                  {user?.displayName || 'Signed in'}
+                </p>
+                {user?.email && (
+                  <p className="truncate text-xs text-gray-600" title={user.email}>
+                    {user.email}
+                  </p>
+                )}
+              </div>
             </div>
             <button
+              type="button"
               onClick={handleLogout}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-red-50 hover:text-red-700"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-4 w-4" aria-hidden="true" />
               Log out
             </button>
           </div>
@@ -93,25 +179,43 @@ export function AppLayout() {
       </aside>
 
       {/* Main content area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar (mobile) */}
-        <header className="flex h-16 items-center border-b border-gray-200 bg-white px-4 lg:hidden">
+        <header className="flex h-14 flex-shrink-0 items-center border-b border-gray-200 bg-white px-2 sm:px-4 lg:hidden">
           <button
+            ref={menuButtonRef}
+            type="button"
             onClick={() => setSidebarOpen(true)}
-            className="rounded-md p-2 text-gray-600 hover:bg-gray-100"
-            aria-label="Open sidebar"
+            className="rounded-md p-2 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            aria-label="Open navigation menu"
+            aria-expanded={sidebarOpen}
+            aria-controls="app-sidebar"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="ml-3 flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-blue-600" />
+          <div className="ml-2 flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-blue-600" aria-hidden="true" />
             <span className="text-lg font-bold text-gray-900">Lex Terrae</span>
           </div>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+        <main
+          id="main-content"
+          ref={mainRef}
+          tabIndex={-1}
+          className="flex-1 overflow-auto p-4 focus:outline-none sm:p-6"
+        >
+          {/* Keep the shell mounted while a lazy page chunk loads. */}
+          <Suspense
+            fallback={
+              <div className="flex h-64 items-center justify-center">
+                <LoadingSpinner size="lg" />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
