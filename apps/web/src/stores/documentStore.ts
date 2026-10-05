@@ -4,7 +4,7 @@ import type {
   DocumentQueryParams,
   DocumentUpdateRequest,
 } from '@lexterrae/shared';
-import { getAccessToken } from '../services/api';
+import { authFetch, getErrorMessage, parseErrorResponse } from '../services/api';
 
 export interface DocumentPagination {
   page: number;
@@ -28,15 +28,8 @@ interface DocumentState {
   isLoadingDetail: boolean;
   /** Error loading the current document. */
   detailError: string | null;
-  uploadProgress: number;
-  isUploading: boolean;
-  uploadError: string | null;
   fetchDocuments: (params?: DocumentQueryParams) => Promise<void>;
   fetchDocument: (id: string) => Promise<void>;
-  uploadDocument: (
-    file: File,
-    metadata: { title: string; description?: string; tags?: string[]; jurisdictionIds: string[] },
-  ) => Promise<void>;
   updateDocument: (
     id: string,
     updates: DocumentUpdateRequest,
@@ -46,10 +39,7 @@ interface DocumentState {
   setQueryParams: (params: Partial<DocumentQueryParams>) => void;
   clearError: () => void;
   clearActionError: () => void;
-  clearUploadError: () => void;
 }
-
-const API_BASE = '/api';
 
 /** Normalise snake_case sort aliases to the API's canonical camelCase keys. */
 const SORT_FIELD_TO_API: Record<string, string> = {
@@ -58,22 +48,9 @@ const SORT_FIELD_TO_API: Record<string, string> = {
   updated_at: 'updatedAt',
 };
 
-function getAuthHeaders(): Record<string, string> {
-  const token = getAccessToken() ?? localStorage.getItem('accessToken');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-async function readErrorMessage(res: Response, fallback: string): Promise<string> {
-  try {
-    const body = await res.json();
-    if (body && typeof body.detail === 'string' && body.detail) return body.detail;
-    if (body && typeof body.title === 'string' && body.title) return body.title;
-  } catch {
-    // Non-JSON body
-  }
-  if (res.status === 404) return 'Document not found';
-  if (res.status === 403) return 'You do not have access to this document';
-  return fallback;
+/** Throw the API's error (as an ApiError with a user-facing message) for a failed response. */
+async function throwIfNotOk(res: Response): Promise<void> {
+  if (!res.ok) throw await parseErrorResponse(res);
 }
 
 /** API wraps single resources as `{ data: T }`; tolerate an unwrapped body too. */
@@ -107,11 +84,8 @@ function buildListQuery(params: DocumentQueryParams): string {
 
 /** Fetch a document's file as a Blob (used for download and inline PDF preview). */
 export async function fetchDocumentBlob(id: string, signal?: AbortSignal): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}/download`, {
-    headers: getAuthHeaders(),
-    signal,
-  });
-  if (!res.ok) throw new Error(await readErrorMessage(res, 'Download failed'));
+  const res = await authFetch(`/documents/${encodeURIComponent(id)}/download`, { signal });
+  await throwIfNotOk(res);
   return res.blob();
 }
 
@@ -132,9 +106,6 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
   currentDocument: null,
   isLoadingDetail: false,
   detailError: null,
-  uploadProgress: 0,
-  isUploading: false,
-  uploadError: null,
 
   fetchDocuments: async (params?: DocumentQueryParams) => {
     const queryParams = params || get().queryParams;
@@ -145,11 +116,10 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     set({ isLoading: true, error: null, queryParams });
     try {
       const qs = buildListQuery(queryParams);
-      const res = await fetch(`${API_BASE}/documents${qs ? `?${qs}` : ''}`, {
-        headers: getAuthHeaders(),
+      const res = await authFetch(`/documents${qs ? `?${qs}` : ''}`, {
         signal: controller.signal,
       });
-      if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to fetch documents'));
+      await throwIfNotOk(res);
       const body = await res.json();
       if (seq !== listRequestSeq) return;
       const raw = (body?.pagination ?? {}) as Partial<DocumentPagination> & { total?: number };
@@ -171,7 +141,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
     } catch (err) {
       if (seq !== listRequestSeq) return; // superseded (includes AbortError)
       set({
-        error: err instanceof Error ? err.message : 'Failed to fetch documents',
+        error: getErrorMessage(err, 'Failed to fetch documents'),
         isLoading: false,
         hasLoaded: true,
       });
@@ -194,68 +164,22 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       currentDocument: existing && existing.id === id ? existing : null,
     });
     try {
-      const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, {
-        headers: getAuthHeaders(),
+      const res = await authFetch(`/documents/${encodeURIComponent(id)}`, {
         signal: controller.signal,
       });
-      if (!res.ok) throw new Error(await readErrorMessage(res, 'Failed to load document'));
+      await throwIfNotOk(res);
       const doc = normalizeDocument(unwrap<DocumentWithJurisdictions>(await res.json()));
       if (seq !== detailRequestSeq) return;
       set({ currentDocument: doc, isLoadingDetail: false });
     } catch (err) {
       if (seq !== detailRequestSeq) return;
       set({
-        detailError: err instanceof Error ? err.message : 'Failed to load document',
+        detailError: getErrorMessage(err, 'Failed to load document'),
         currentDocument: null,
         isLoadingDetail: false,
       });
     } finally {
       if (detailAbort === controller) detailAbort = null;
-    }
-  },
-
-  uploadDocument: async (file, metadata) => {
-    set({ isUploading: true, uploadProgress: 0, uploadError: null });
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('title', metadata.title);
-      if (metadata.description) formData.append('description', metadata.description);
-      // multer parses `field[]` into arrays, which is what the API's zod schema expects
-      // (a JSON-encoded string would fail `z.array(...)` validation).
-      (metadata.tags ?? []).forEach((tag) => formData.append('tags[]', tag));
-      metadata.jurisdictionIds.forEach((jid) => formData.append('jurisdictionIds[]', jid));
-      const xhr = new XMLHttpRequest();
-      await new Promise<void>((resolve, reject) => {
-        xhr.upload.addEventListener('progress', (e) => {
-          if (e.lengthComputable) set({ uploadProgress: Math.round((e.loaded / e.total) * 100) });
-        });
-        xhr.addEventListener('load', () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else {
-            try {
-              reject(new Error(JSON.parse(xhr.responseText).detail || 'Upload failed'));
-            } catch {
-              reject(new Error('Upload failed'));
-            }
-          }
-        });
-        xhr.addEventListener('error', () => reject(new Error('Upload failed')));
-        xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
-        // API route is POST /api/documents (there is no /upload sub-route).
-        xhr.open('POST', `${API_BASE}/documents`);
-        const { Authorization } = getAuthHeaders();
-        if (Authorization) xhr.setRequestHeader('Authorization', Authorization);
-        xhr.send(formData);
-      });
-      set({ isUploading: false, uploadProgress: 100 });
-    } catch (err) {
-      set({
-        uploadError: err instanceof Error ? err.message : 'Upload failed',
-        isUploading: false,
-        uploadProgress: 0,
-      });
-      throw err;
     }
   },
 
@@ -270,12 +194,11 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       documents: prevDocuments.map(applyUpdates),
     });
     try {
-      const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, {
+      const res = await authFetch(`/documents/${encodeURIComponent(id)}`, {
         method: 'PATCH',
-        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
-      if (!res.ok) throw new Error(await readErrorMessage(res, 'Update failed'));
+      await throwIfNotOk(res);
       const serverDoc = unwrap<DocumentWithJurisdictions>(await res.json());
       // Merge so fields the PATCH response omits (e.g. contentText) are kept.
       const merge = (d: DocumentWithJurisdictions) =>
@@ -294,7 +217,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       set({
         currentDocument: prevCurrent,
         documents: prevDocuments,
-        actionError: err instanceof Error ? err.message : 'Update failed',
+        actionError: getErrorMessage(err, 'Update failed'),
       });
       throw err;
     }
@@ -312,11 +235,8 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
         : prevPagination,
     });
     try {
-      const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(await readErrorMessage(res, 'Delete failed'));
+      const res = await authFetch(`/documents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      await throwIfNotOk(res);
       if (get().currentDocument?.id === id) set({ currentDocument: null });
     } catch (err) {
       // Roll back: restore the removed row (other concurrent removals are kept).
@@ -332,7 +252,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
           pagination: { ...s.pagination, totalItems: s.pagination.totalItems + 1 },
         }));
       }
-      set({ actionError: err instanceof Error ? err.message : 'Delete failed' });
+      set({ actionError: getErrorMessage(err, 'Delete failed') });
       throw err;
     }
   },
@@ -351,7 +271,7 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       // Revoking synchronously can cancel the download in some browsers.
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-      set({ actionError: err instanceof Error ? err.message : 'Download failed' });
+      set({ actionError: getErrorMessage(err, 'Download failed') });
     }
   },
 
@@ -364,5 +284,4 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
 
   clearError: () => set({ error: null }),
   clearActionError: () => set({ actionError: null }),
-  clearUploadError: () => set({ uploadError: null }),
 }));

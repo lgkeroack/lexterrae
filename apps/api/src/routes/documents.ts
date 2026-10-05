@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import multer from 'multer';
 import { authenticate } from '../middleware/auth.js';
+import { generalLimiter, searchLimiter, uploadLimiter } from '../lib/rate-limit.js';
 import { validate } from '../middleware/validate.js';
 import { documentService } from '../services/document.service.js';
 import { env } from '../config/env.js';
@@ -43,8 +44,8 @@ function handleUpload(req: Request, res: Response, next: NextFunction): void {
   });
 }
 
-// All document routes require authentication
-router.use(authenticate);
+// All document routes require authentication; limits are then applied per user
+router.use(authenticate, generalLimiter);
 
 /**
  * POST /api/documents
@@ -53,6 +54,8 @@ router.use(authenticate);
  */
 router.post(
   ['/', '/upload'],
+  // Checked before multer so rejected uploads are not buffered
+  uploadLimiter,
   handleUpload,
   validate({ body: uploadDocumentSchema }),
   async (req: Request, res: Response, next: NextFunction) => {
@@ -92,6 +95,7 @@ router.post(
  */
 router.get(
   '/',
+  searchLimiter,
   validate({ query: documentQuerySchema }),
   async (req: Request, res: Response, next: NextFunction) => {
     try {

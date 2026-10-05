@@ -2,8 +2,12 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { jurisdictionService } from '../services/jurisdiction.service.js';
 import { validate } from '../middleware/validate.js';
 import { z } from 'zod';
+import { generalLimiter } from '../lib/rate-limit.js';
 
 const router: ReturnType<typeof Router> = Router();
+
+// Public reference data: limited per IP
+router.use(generalLimiter);
 
 const jurisdictionParamsSchema = z.object({
   id: z.string().uuid('Jurisdiction ID must be a valid UUID'),

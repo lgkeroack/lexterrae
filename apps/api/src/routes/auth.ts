@@ -5,7 +5,6 @@ import {
   type NextFunction,
   type CookieOptions,
 } from 'express';
-import rateLimit, { type Options as RateLimitOptions } from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { authService } from '../services/auth.service.js';
@@ -13,6 +12,7 @@ import { auditService } from '../services/audit.service.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { AuthenticationError } from '../lib/errors.js';
+import { loginLimiter, refreshLimiter, registerLimiter } from '../lib/rate-limit.js';
 import {
   registerSchema,
   loginSchema,
@@ -50,58 +50,6 @@ function readRefreshToken(req: Request): string | undefined {
   const fromCookie = (req.cookies as Record<string, unknown> | undefined)?.[REFRESH_COOKIE];
   return typeof fromCookie === 'string' && fromCookie.length > 0 ? fromCookie : undefined;
 }
-
-/** Rate-limit responses use the same RFC 7807 shape as every other API error. */
-function rateLimitHandler(detail: string): RateLimitOptions['handler'] {
-  return (req, res) => {
-    res.status(429).json({
-      type: 'https://lexterrae.io/problems/rate-limit-exceeded',
-      title: 'Too Many Requests',
-      status: 429,
-      detail,
-      instance: req.originalUrl,
-      code: 'RATE_LIMIT_EXCEEDED',
-      requestId: req.requestId,
-    });
-  };
-}
-
-/**
- * Rate limiter for login attempts: 10 requests per 15 minutes per IP.
- */
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Only failed attempts count, so legitimate users are not locked out by normal use
-  skipSuccessfulRequests: true,
-  handler: rateLimitHandler(
-    'Too many failed sign-in attempts. Please wait 15 minutes and try again.',
-  ),
-});
-
-/**
- * Rate limiter for registration: 5 requests per hour per IP.
- */
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler('Too many registration attempts. Please try again in an hour.'),
-});
-
-/**
- * Rate limiter for token refresh/logout: 60 requests per 15 minutes per IP.
- */
-const refreshLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: rateLimitHandler('Too many session refresh attempts. Please try again later.'),
-});
 
 /**
  * POST /api/auth/register

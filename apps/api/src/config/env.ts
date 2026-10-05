@@ -62,8 +62,9 @@ const envSchema = z.object({
         .filter(Boolean),
     ),
   MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(200).default(50),
-  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().default(900000),
-  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().default(100),
+  // General per-user API limit (07-SECURITY.md §1.3: 100 requests per minute)
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60000),
+  RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().min(1).default(100),
 });
 
 export type Env = z.infer<typeof envSchema>;

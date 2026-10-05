@@ -14,6 +14,7 @@ import healthRouter from './routes/health.js';
 import authRouter from './routes/auth.js';
 import documentsRouter from './routes/documents.js';
 import jurisdictionsRouter from './routes/jurisdictions.js';
+import { retentionService } from './services/retention.service.js';
 
 const app: ReturnType<typeof express> = express();
 
@@ -137,12 +138,33 @@ redis.connect().catch(() => {
   // Error already logged by the redis 'error' listener; ioredis keeps retrying in the background
 });
 
+// Permanently remove documents past their soft-delete retention period.
+// First run shortly after startup, then every 6 hours; never keeps the process alive.
+const PURGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+function runRetentionPurge() {
+  retentionService.purgeExpiredDocuments().catch((err: unknown) => {
+    logger.error({
+      module: 'server',
+      message: 'Retention purge failed',
+      error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
+    });
+  });
+}
+const purgeTimers =
+  env.NODE_ENV === 'test'
+    ? []
+    : [
+        setTimeout(runRetentionPurge, 60_000).unref(),
+        setInterval(runRetentionPurge, PURGE_INTERVAL_MS).unref(),
+      ];
+
 // Graceful shutdown
 let shuttingDown = false;
 
 async function gracefulShutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
+  purgeTimers.forEach((timer) => clearTimeout(timer));
   logger.info({ module: 'server', message: `Received ${signal}. Starting graceful shutdown...` });
 
   // Force shutdown after 10 seconds (unref so it never keeps the process alive by itself)
