@@ -1,18 +1,18 @@
-# LexVault — Performance Optimization Guide
+# Lex Terrae — Performance Optimization Guide
 
 ## Performance Budgets
 
-| Metric | Budget | Measurement |
-|--------|--------|-------------|
-| First Contentful Paint (FCP) | < 1.5s | Lighthouse, 4G throttled |
-| Largest Contentful Paint (LCP) | < 2.5s | Lighthouse, 4G throttled |
-| Time to Interactive (TTI) | < 3.5s | Lighthouse, 4G throttled |
-| Cumulative Layout Shift (CLS) | < 0.1 | Lighthouse |
-| Total JS bundle (gzipped) | < 200 KB | Build output |
-| Map SVG + TopoJSON (gzipped) | < 80 KB | Network transfer |
-| API response (p95) | < 300ms | Server-side metrics |
-| Document list load (100 items) | < 500ms | End-to-end |
-| Upload throughput | ≥ 5 MB/s on 50 Mbps connection | Client measurement |
+| Metric                         | Budget                         | Measurement              |
+| ------------------------------ | ------------------------------ | ------------------------ |
+| First Contentful Paint (FCP)   | < 1.5s                         | Lighthouse, 4G throttled |
+| Largest Contentful Paint (LCP) | < 2.5s                         | Lighthouse, 4G throttled |
+| Time to Interactive (TTI)      | < 3.5s                         | Lighthouse, 4G throttled |
+| Cumulative Layout Shift (CLS)  | < 0.1                          | Lighthouse               |
+| Total JS bundle (gzipped)      | < 200 KB                       | Build output             |
+| Map SVG + TopoJSON (gzipped)   | < 80 KB                        | Network transfer         |
+| API response (p95)             | < 300ms                        | Server-side metrics      |
+| Document list load (100 items) | < 500ms                        | End-to-end               |
+| Upload throughput              | ≥ 5 MB/s on 50 Mbps connection | Client measurement       |
 
 ---
 
@@ -33,6 +33,7 @@ const PDFViewer = lazy(() => import('./components/browser/PDFViewer'));
 ```
 
 **Chunking strategy:**
+
 - `vendor.js` — React, React DOM (shared across all routes)
 - `map.js` — D3.js, TopoJSON, map components (loaded on upload/browse pages)
 - `pdf.js` — PDF viewer library (loaded only when viewing a PDF)
@@ -43,12 +44,14 @@ const PDFViewer = lazy(() => import('./components/browser/PDFViewer'));
 The Canada map is the most visually complex component. Optimization is critical.
 
 **TopoJSON over GeoJSON:**
+
 - Raw GeoJSON for Canada with provinces: ~2.5 MB
 - Simplified TopoJSON (quantized, topology-shared): ~150 KB
 - Further simplified for overview map (tolerance 0.01): ~40 KB
 - Keep a detailed version for province drill-down views
 
 **SVG Rendering:**
+
 ```typescript
 // Use D3's path generator efficiently
 const pathGenerator = d3.geoPath().projection(projection);
@@ -67,6 +70,7 @@ const provincePaths = useMemo(() => {
 ```
 
 **Interaction performance:**
+
 - Debounce mousemove events on the map (16ms / 60fps)
 - Use CSS `will-change: transform` on SVG groups that animate
 - For municipality drill-down, load the detailed province TopoJSON on demand
@@ -112,6 +116,7 @@ function DocumentList({ documents }: { documents: Document[] }) {
 ```
 
 ### Image & Asset Optimization
+
 - Serve static assets (TopoJSON, icons) from CDN with `Cache-Control: public, max-age=31536000, immutable`
 - Use SVG for icons (lucide-react), not icon fonts
 - Preload critical assets: `<link rel="preload" href="/canada-topo.json" as="fetch" crossorigin>`
@@ -194,36 +199,20 @@ LIMIT 20;
 ### Caching Strategy
 
 ```
-┌─────────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│   Client     │────▶│  CDN     │────▶│  Redis   │────▶│ Postgres │
-│  (browser    │     │ (static) │     │ (data)   │     │ (source) │
-│   cache)     │     │          │     │          │     │          │
-└─────────────┘     └──────────┘     └──────────┘     └──────────┘
+┌─────────────┐     ┌──────────────────┐     ┌────────────────┐     ┌──────────┐
+│   Client     │────▶│ Cloudflare edge  │────▶│ Worker isolate │────▶│   Neon   │
+│  (browser    │     │ (static assets)  │     │ (in-memory)    │     │ (source) │
+│   cache)     │     │                  │     │                │     │          │
+└─────────────┘     └──────────────────┘     └────────────────┘     └──────────┘
 ```
 
-| Data | Cache Layer | TTL | Invalidation |
-|------|------------|-----|-------------|
-| Static assets (JS, CSS, TopoJSON) | CDN + browser | 1 year (immutable, hashed filenames) | Deploy new version |
-| Jurisdiction tree | Redis | 24 hours | Manual flush on data update |
-| User's document list | Redis | 5 minutes | Invalidate on upload/delete/edit |
-| Document search results | None (too variable) | — | — |
-| Auth sessions | Redis | Matches JWT expiry | Logout / token revocation |
-
-```typescript
-// Redis caching pattern
-async function getJurisdictionTree(): Promise<JurisdictionTree> {
-  const cacheKey = 'jurisdictions:tree';
-  const cached = await redis.get(cacheKey);
-
-  if (cached) {
-    return JSON.parse(cached) as JurisdictionTree;
-  }
-
-  const tree = await buildJurisdictionTreeFromDB();
-  await redis.set(cacheKey, JSON.stringify(tree), 'EX', 86400); // 24h
-  return tree;
-}
-```
+| Data                     | Cache Layer                                          | TTL                                  | Invalidation                       |
+| ------------------------ | ---------------------------------------------------- | ------------------------------------ | ---------------------------------- |
+| Static assets (JS, CSS)  | Edge + browser (`_headers`)                          | 1 year (immutable, hashed filenames) | Deploy new version                 |
+| Jurisdiction list        | Worker isolate memory + `Cache-Control: max-age=300` | 5 minutes                            | Expires; re-seed rarely changes it |
+| User's document list     | None                                                 | —                                    | —                                  |
+| Document search results  | None (too variable)                                  | —                                    | —                                  |
+| Refresh-token revocation | Postgres `revoked_tokens`                            | Until token expiry                   | Cleaned up by the scheduled job    |
 
 ### File Upload Optimization
 
@@ -252,27 +241,7 @@ async function uploadFile(file: File, onProgress: (pct: number) => void) {
 }
 ```
 
-**Server-side streaming:** Pipe upload stream directly to S3 without buffering entire file in memory:
-
-```typescript
-// Stream file directly to S3 — don't load into memory
-import { Upload } from '@aws-sdk/lib-storage';
-
-async function streamToS3(stream: Readable, key: string, contentType: string) {
-  const upload = new Upload({
-    client: s3Client,
-    params: { Bucket: BUCKET, Key: key, Body: stream, ContentType: contentType },
-    queueSize: 4,
-    partSize: 5 * 1024 * 1024,
-  });
-
-  upload.on('httpUploadProgress', (progress) => {
-    logger.debug({ key, loaded: progress.loaded, total: progress.total });
-  });
-
-  return upload.done();
-}
-```
+**Server side:** the Worker reads the upload (max 50 MB, well under the 128 MB isolate memory limit) once to check its magic bytes and extract text, then writes it to R2 with `env.BUCKET.put()`. Downloads stream straight from R2 (`object.body`) without buffering.
 
 ---
 
@@ -280,16 +249,15 @@ async function streamToS3(stream: Readable, key: string, contentType: string) {
 
 ### Key Metrics to Track
 
-| Metric | Alert Threshold | Tool |
-|--------|----------------|------|
-| API response time (p95) | > 500ms | Prometheus / Grafana |
-| API error rate (5xx) | > 1% of requests | Prometheus / Grafana |
-| Upload success rate | < 95% | Custom metric |
-| Database connection pool utilization | > 80% | pg pool stats |
-| Redis memory usage | > 75% of max | Redis INFO |
-| S3 storage growth | > 80% of quota | CloudWatch / MinIO |
-| Node.js event loop lag | > 100ms | `perf_hooks` |
-| Heap memory usage | > 80% of limit | `process.memoryUsage()` |
+| Metric                              | Alert Threshold        | Tool                  |
+| ----------------------------------- | ---------------------- | --------------------- |
+| API response time (p95)             | > 500ms                | Workers Observability |
+| API error rate (5xx)                | > 1% of requests       | Workers Observability |
+| Upload success rate                 | < 95%                  | Custom metric         |
+| Worker CPU time per request (p95)   | > 1 s                  | Workers Observability |
+| Worker exceptions / exceeded limits | Any sustained increase | Workers Observability |
+| Neon compute and storage usage      | > 80% of plan          | Neon console          |
+| R2 storage growth                   | > 80% of budget        | Cloudflare dashboard  |
 
 ### Performance Testing
 
@@ -304,6 +272,7 @@ Run load tests before each release targeting production-like data volumes:
 ```
 
 **Baseline targets under load:**
+
 - Upload endpoint: handles 50 concurrent uploads, p95 < 2s (excluding transfer time)
 - Document list: handles 200 concurrent requests, p95 < 300ms
 - Search: handles 100 concurrent searches, p95 < 500ms

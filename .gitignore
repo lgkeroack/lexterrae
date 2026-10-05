@@ -2,10 +2,22 @@ node_modules/
 dist/
 build/
 coverage/
-.env
-.env.local
-.env.production
 *.log
 .DS_Store
 *.tsbuildinfo
 .vite/
+
+# Local secrets / config
+.env
+.env.local
+.env.production
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# Cloudflare Wrangler local state
+.wrangler/
+
+# Generated Prisma clients (run `pnpm --filter @lexterrae/api db:generate`)
+apps/api/src/generated/
+apps/api/prisma/generated/

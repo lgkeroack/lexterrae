@@ -1,75 +1,66 @@
-import { Router } from 'express';
-import { HeadBucketCommand } from '@aws-sdk/client-s3';
+import { Hono } from 'hono';
 import type { HealthCheckResponse, ServiceHealth } from '@lexterrae/shared';
-import { prisma } from '../config/database.js';
-import { redis } from '../config/redis.js';
-import { s3Client } from '../config/s3.js';
-import { env } from '../config/env.js';
-import { logger } from '../lib/logger.js';
-
-const router: ReturnType<typeof Router> = Router();
+import { version } from '../../package.json';
+import type { AppEnv } from '../types.js';
 
 const CHECK_TIMEOUT_MS = 3_000;
 
-/** Runs a dependency probe with a timeout so a hung dependency cannot hang the health endpoint. */
-async function probe(
-  name: string,
-  check: (signal: AbortSignal) => Promise<unknown>,
-): Promise<ServiceHealth> {
-  const start = Date.now();
-  const controller = new AbortController();
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    await Promise.race([
-      check(controller.signal),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          controller.abort();
-          reject(new Error(`Timed out after ${CHECK_TIMEOUT_MS}ms`));
-        }, CHECK_TIMEOUT_MS);
-      }),
-    ]);
-    return { status: 'healthy', latencyMs: Date.now() - start };
-  } catch (err) {
-    const error = err instanceof Error ? err.message || err.name : 'Unknown error';
-    logger.error({ module: 'health', message: `${name} health check failed`, error });
-    return {
-      status: 'unhealthy',
-      latencyMs: Date.now() - start,
-      // SECURITY: Raw dependency errors can reveal hostnames/config; only expose them outside production
-      ...(env.NODE_ENV !== 'production' ? { error } : {}),
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const health = new Hono<AppEnv>();
 
-router.get('/', async (_req, res) => {
-  const [database, redisCheck, s3] = await Promise.all([
-    probe('Database', () => prisma.$queryRaw`SELECT 1`),
-    probe('Redis', () => redis.ping()),
-    probe('S3', (abortSignal) =>
-      s3Client.send(new HeadBucketCommand({ Bucket: env.S3_BUCKET }), { abortSignal }),
-    ),
+/** GET /api/health — database (Neon) and storage (R2) status. */
+health.get('/', async (c) => {
+  const { sql, bucket, config, log } = c.get('deps');
+
+  const probe = async (name: string, check: () => Promise<unknown>): Promise<ServiceHealth> => {
+    const start = Date.now();
+    let timer: number | undefined;
+    try {
+      await Promise.race([
+        check(),
+        new Promise((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Timed out after ${CHECK_TIMEOUT_MS}ms`)),
+            CHECK_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      return { status: 'healthy', latencyMs: Date.now() - start };
+    } catch (err) {
+      const error = err instanceof Error ? err.message || err.name : 'Unknown error';
+      log.error({ module: 'health', message: `${name} health check failed`, error });
+      // SECURITY: raw dependency errors can reveal hostnames/config; only expose them outside production
+      return {
+        status: 'unhealthy',
+        latencyMs: Date.now() - start,
+        ...(config.ENVIRONMENT !== 'production' ? { error } : {}),
+      };
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+
+  const [database, storage] = await Promise.all([
+    probe('Database', () => sql`SELECT 1`),
+    probe('Storage', () => bucket.head('healthcheck')),
   ]);
 
-  const checks = { database, redis: redisCheck, s3 };
-  const allHealthy = Object.values(checks).every((c) => c.status === 'healthy');
-  // The API cannot serve anything without the database; Redis/S3 outages only degrade some features
+  // Nothing works without the database; a storage outage only affects uploads/downloads
   const status: HealthCheckResponse['status'] =
-    database.status !== 'healthy' ? 'unhealthy' : allHealthy ? 'healthy' : 'degraded';
+    database.status !== 'healthy'
+      ? 'unhealthy'
+      : storage.status !== 'healthy'
+        ? 'degraded'
+        : 'healthy';
 
   const body: HealthCheckResponse = {
     status,
-    version: process.env['npm_package_version'] ?? '0.0.0',
-    environment: env.NODE_ENV,
-    uptime: process.uptime(),
+    version,
+    environment: config.ENVIRONMENT,
     timestamp: new Date().toISOString(),
-    checks,
+    checks: { database, storage },
   };
-
-  res.set('Cache-Control', 'no-store');
-  res.status(status === 'unhealthy' ? 503 : 200).json(body);
+  c.header('Cache-Control', 'no-store');
+  return c.json(body, status === 'unhealthy' ? 503 : 200);
 });
 
-export default router;
+export default health;

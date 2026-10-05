@@ -1,41 +1,18 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '../config/database.js';
-import { env } from '../config/env.js';
-import { NotFoundError, FileSizeError } from '../lib/errors.js';
-import { createModuleLogger } from '../lib/logger.js';
-import { fileService } from './file.service.js';
-import { jurisdictionService } from './jurisdiction.service.js';
-import { auditService } from './audit.service.js';
-
-const logger = createModuleLogger('document.service');
+import type { Document } from '@lexterrae/shared';
+import { FileSizeError, NotFoundError } from '../lib/errors.js';
+import type { Deps } from '../types.js';
+import type { DocumentQueryInput } from '../validators/document.validator.js';
+import { audit } from './audit.service.js';
+import * as files from './file.service.js';
+import * as jurisdictions from './jurisdiction.service.js';
 
 export interface UploadDocumentParams {
   userId: string;
   title: string;
-  description?: string;
-  tags?: string[];
+  description: string;
+  tags: string[];
   jurisdictionIds: string[];
-  file: {
-    buffer: Buffer;
-    originalname: string;
-    size: number;
-  };
-  requestId: string;
-  actorIp: string;
-}
-
-export interface GetDocumentsParams {
-  userId: string;
-  page: number;
-  pageSize: number;
-  search?: string;
-  jurisdictionLevel?: string;
-  jurisdictionId?: string;
-  fileType?: string;
-  sortBy: string;
-  sortOrder: 'asc' | 'desc';
-  dateFrom?: Date;
-  dateTo?: Date;
+  file: File;
 }
 
 export interface UpdateDocumentParams {
@@ -44,443 +21,254 @@ export interface UpdateDocumentParams {
   title?: string;
   description?: string;
   tags?: string[];
-  requestId: string;
-  actorIp: string;
 }
 
-export class DocumentService {
-  /**
-   * Uploads a document: validates the file, streams to S3, creates a DB record
-   * with jurisdiction associations, and creates an audit log entry.
-   */
-  async uploadDocument(params: UploadDocumentParams) {
-    const { userId, title, description, tags, jurisdictionIds, file, requestId, actorIp } = params;
+/** Columns returned for a document, with its jurisdictions embedded as JSON. */
+function documentColumns(options: { includeContent?: boolean } = {}): string {
+  return `d.id, d.user_id AS "userId", d.title, d.description, d.file_type AS "fileType",
+    d.file_size_bytes AS "fileSizeBytes", d.original_filename AS "originalFilename", d.tags,
+    ${options.includeContent ? 'd.content_text AS "contentText",' : ''}
+    COALESCE((
+      SELECT json_agg(json_build_object('id', j.id, 'name', j.name, 'code', j.code,
+                                        'level', j.level, 'parentId', j.parent_id) ORDER BY j.name)
+      FROM document_jurisdictions dj JOIN jurisdictions j ON j.id = dj.jurisdiction_id
+      WHERE dj.document_id = d.id
+    ), '[]'::json) AS jurisdictions,
+    d.uploaded_at AS "uploadedAt", d.updated_at AS "updatedAt"`;
+}
 
-    // Check file size
-    const maxBytes = env.MAX_FILE_SIZE_MB * 1024 * 1024;
-    if (file.size > maxBytes) {
-      throw new FileSizeError(
-        `File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the ${env.MAX_FILE_SIZE_MB} MB limit`,
-      );
-    }
+/** Whitelisted sort columns (values come from the validator's enum). */
+const SORT_COLUMNS: Record<DocumentQueryInput['sortBy'], string> = {
+  uploadedAt: 'd.uploaded_at',
+  updatedAt: 'd.updated_at',
+  title: 'd.title',
+  fileSizeBytes: 'd.file_size_bytes',
+};
 
-    // Validate file type via magic bytes
-    const sanitizedFilename = fileService.sanitizeFilename(file.originalname);
-    const { mimeType, extension } = await fileService.validateFileType(
-      file.buffer,
-      sanitizedFilename,
+/**
+ * Validates the file, stores it in R2 and creates the document with its jurisdictions in a
+ * single statement. If the database insert fails, the stored file is removed again.
+ */
+export async function uploadDocument(deps: Deps, params: UploadDocumentParams): Promise<Document> {
+  const { userId, title, description, tags, file } = params;
+
+  const maxBytes = deps.config.MAX_FILE_SIZE_MB * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new FileSizeError(
+      `File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the ${deps.config.MAX_FILE_SIZE_MB} MB limit`,
     );
+  }
 
-    // Validate jurisdictions exist (accepts UUIDs or jurisdiction codes such as "BC")
-    const jurisdictions = await jurisdictionService.resolveJurisdictionRefs(jurisdictionIds);
-    const resolvedJurisdictionIds = jurisdictions.map((j) => j.id);
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const filename = files.sanitizeFilename(file.name);
+  const { mimeType, extension } = await files.validateFileType(bytes, filename);
 
-    // Extract searchable text (never throws)
-    const contentText = await fileService.extractText(file.buffer, extension);
+  // Accepts UUIDs or jurisdiction codes such as "BC"
+  const resolved = await jurisdictions.resolveJurisdictionRefs(deps, params.jurisdictionIds);
+  const jurisdictionIds = resolved.map((j) => j.id);
 
-    // Generate S3 key and upload
-    const fileKey = fileService.generateFileKey(userId, extension);
-    await fileService.streamToS3(fileKey, file.buffer, mimeType, sanitizedFilename);
+  const contentText = await files.extractText(deps, bytes, extension);
 
-    // Create DB record with jurisdictions; if it fails, remove the stored object so it is not orphaned
-    let document;
-    try {
-      document = await prisma.document.create({
-        data: {
-          userId,
-          title,
-          description: description || '',
-          fileKey,
-          fileType: extension,
-          fileSizeBytes: file.size,
-          originalFilename: sanitizedFilename,
-          contentText,
-          tags: tags || [],
-          jurisdictions: {
-            create: resolvedJurisdictionIds.map((jId) => ({
-              jurisdictionId: jId,
-            })),
-          },
-        },
-        include: {
-          jurisdictions: {
-            include: {
-              jurisdiction: {
-                select: { id: true, name: true, code: true, level: true, parentId: true },
-              },
-            },
-          },
-        },
-      });
-    } catch (err) {
-      logger.error({
-        userId,
-        fileKey,
-        message: 'Failed to create document record; removing stored file',
-        error: err instanceof Error ? err.message : String(err),
-      });
-      await fileService.deleteFromS3(fileKey).catch(() => undefined);
-      throw err;
+  const fileKey = files.generateFileKey(userId, extension);
+  await files.putFile(deps, fileKey, bytes, mimeType, filename);
+
+  let documentId: string;
+  try {
+    const [row] = await deps.sql`
+      WITH doc AS (
+        INSERT INTO documents (user_id, title, description, file_key, file_type, file_size_bytes,
+                               original_filename, content_text, tags)
+        VALUES (${userId}, ${title}, ${description}, ${fileKey}, ${extension}, ${bytes.length},
+                ${filename}, ${contentText}, ${tags})
+        RETURNING id
+      ), links AS (
+        INSERT INTO document_jurisdictions (document_id, jurisdiction_id)
+        SELECT doc.id, unnest(${jurisdictionIds}::uuid[]) FROM doc
+      )
+      SELECT id FROM doc`;
+    documentId = (row as { id: string }).id;
+  } catch (err) {
+    deps.log.error({
+      module: 'documents',
+      message: 'Failed to create document; removing stored file',
+      fileKey,
+      error: err,
+    });
+    await files.deleteFile(deps, fileKey).catch(() => undefined);
+    throw err;
+  }
+
+  audit(deps, {
+    actorUserId: userId,
+    action: 'document.upload',
+    resourceType: 'document',
+    resourceId: documentId,
+    changes: { title, fileType: extension, fileSizeBytes: bytes.length, jurisdictionIds },
+    outcome: 'success',
+  });
+  deps.log.info({ module: 'documents', message: 'Document uploaded', userId, documentId });
+
+  return getDocument(deps, documentId, userId, { includeContent: false });
+}
+
+/** A single document owned by the user (404 for missing, deleted or other users' documents). */
+export async function getDocument(
+  deps: Deps,
+  documentId: string,
+  userId: string,
+  options: { includeContent?: boolean } = { includeContent: true },
+): Promise<Document> {
+  const rows = await deps.sql.query(
+    `SELECT ${documentColumns(options)} FROM documents d
+     WHERE d.id = $1 AND d.user_id = $2 AND d.deleted_at IS NULL`,
+    [documentId, userId],
+  );
+  // SECURITY: 404 rather than 403 so other users' document IDs are not revealed (07-SECURITY.md §1.4)
+  if (!rows[0]) throw new NotFoundError('Document not found');
+  return rows[0] as unknown as Document;
+}
+
+/** Paginated list with search, jurisdiction, file type and date filters. */
+export async function listDocuments(deps: Deps, userId: string, query: DocumentQueryInput) {
+  const params: unknown[] = [userId];
+  const where = ['d.user_id = $1', 'd.deleted_at IS NULL'];
+  const param = (value: unknown) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
+  if (query.search) {
+    const pattern = param(`%${query.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
+    where.push(`(d.title ILIKE ${pattern} OR d.description ILIKE ${pattern}
+      OR d.original_filename ILIKE ${pattern} OR d.content_text ILIKE ${pattern}
+      OR EXISTS (SELECT 1 FROM unnest(d.tags) AS t WHERE t ILIKE ${pattern}))`);
+  }
+  if (query.fileType) where.push(`d.file_type = ${param(query.fileType)}`);
+  if (query.dateFrom) where.push(`d.uploaded_at >= ${param(query.dateFrom)}`);
+  if (query.dateTo) where.push(`d.uploaded_at <= ${param(query.dateTo)}`);
+
+  if (query.jurisdictionId || query.jurisdictionLevel) {
+    const conditions: string[] = [];
+    if (query.jurisdictionId) {
+      // Include sub-jurisdictions: "BC" also matches documents tagged with BC municipalities
+      const ids = await jurisdictions.getSelfAndDescendantIds(deps, query.jurisdictionId);
+      conditions.push(`dj.jurisdiction_id = ANY(${param(ids)}::uuid[])`);
     }
+    if (query.jurisdictionLevel) conditions.push(`j.level = ${param(query.jurisdictionLevel)}`);
+    where.push(`EXISTS (SELECT 1 FROM document_jurisdictions dj
+      JOIN jurisdictions j ON j.id = dj.jurisdiction_id
+      WHERE dj.document_id = d.id AND ${conditions.join(' AND ')})`);
+  }
 
-    // Audit log (fire-and-forget)
-    auditService.logAction({
+  const whereSql = where.join(' AND ');
+  const direction = query.sortOrder === 'asc' ? 'ASC' : 'DESC';
+  const offset = (query.page - 1) * query.pageSize;
+
+  const [rows, countRows] = await Promise.all([
+    deps.sql.query(
+      // id as a tie-breaker keeps pagination stable when sort values collide
+      `SELECT ${documentColumns()} FROM documents d WHERE ${whereSql}
+       ORDER BY ${SORT_COLUMNS[query.sortBy]} ${direction}, d.id ${direction}
+       LIMIT ${query.pageSize} OFFSET ${offset}`,
+      params,
+    ),
+    deps.sql.query(`SELECT count(*)::int AS total FROM documents d WHERE ${whereSql}`, params),
+  ]);
+  const total = (countRows[0] as { total: number }).total;
+
+  return {
+    data: rows as unknown as Document[],
+    pagination: {
+      page: query.page,
+      pageSize: query.pageSize,
+      totalItems: total,
+      /** @deprecated alias of totalItems */
+      total,
+      totalPages: Math.ceil(total / query.pageSize),
+    },
+  };
+}
+
+/** Updates title, description and/or tags; audits only fields that actually changed. */
+export async function updateDocument(deps: Deps, params: UpdateDocumentParams): Promise<Document> {
+  const { userId, documentId } = params;
+  const [existing] = (await deps.sql`
+    SELECT title, description, tags FROM documents
+    WHERE id = ${documentId} AND user_id = ${userId} AND deleted_at IS NULL`) as {
+    title: string;
+    description: string | null;
+    tags: string[];
+  }[];
+  if (!existing) throw new NotFoundError('Document not found');
+
+  const changes: Record<string, { from: unknown; to: unknown }> = {};
+  if (params.title !== undefined && params.title !== existing.title) {
+    changes['title'] = { from: existing.title, to: params.title };
+  }
+  if (params.description !== undefined && params.description !== existing.description) {
+    changes['description'] = { from: existing.description, to: params.description };
+  }
+  if (params.tags !== undefined && JSON.stringify(params.tags) !== JSON.stringify(existing.tags)) {
+    changes['tags'] = { from: existing.tags, to: params.tags };
+  }
+
+  if (Object.keys(changes).length > 0) {
+    await deps.sql`
+      UPDATE documents SET
+        title = ${params.title ?? existing.title},
+        description = ${params.description ?? existing.description},
+        tags = ${params.tags ?? existing.tags}
+      WHERE id = ${documentId} AND user_id = ${userId}`;
+    audit(deps, {
       actorUserId: userId,
-      actorIp,
-      action: 'document.upload',
-      resourceType: 'document',
-      resourceId: document.id,
-      changes: {
-        title,
-        fileType: extension,
-        fileSizeBytes: file.size,
-        jurisdictionIds: resolvedJurisdictionIds,
-      },
-      requestId,
-      outcome: 'success',
-    });
-
-    logger.info({ userId, documentId: document.id, message: 'Document uploaded successfully' });
-
-    return this.formatDocument(document);
-  }
-
-  /**
-   * Retrieves a single document by ID. Checks ownership.
-   */
-  async getDocument(documentId: string, userId: string) {
-    const document = await prisma.document.findUnique({
-      where: { id: documentId },
-      include: {
-        jurisdictions: {
-          include: {
-            jurisdiction: {
-              select: { id: true, name: true, code: true, level: true, parentId: true },
-            },
-          },
-        },
-      },
-    });
-
-    if (!document || document.deletedAt) {
-      throw new NotFoundError('Document not found');
-    }
-
-    // SECURITY: 404 rather than 403 so other users' document IDs are not revealed (07-SECURITY.md §1.4)
-    if (document.userId !== userId) {
-      throw new NotFoundError('Document not found');
-    }
-
-    return this.formatDocument(document, { includeContent: true });
-  }
-
-  /**
-   * Retrieves a paginated list of documents with filtering and sorting.
-   */
-  async getDocuments(params: GetDocumentsParams) {
-    const {
-      userId,
-      page,
-      pageSize,
-      search,
-      jurisdictionLevel,
-      jurisdictionId,
-      fileType,
-      sortBy,
-      sortOrder,
-      dateFrom,
-      dateTo,
-    } = params;
-
-    const skip = (page - 1) * pageSize;
-
-    // Build where clause
-    const where: Prisma.DocumentWhereInput = {
-      userId,
-      deletedAt: null,
-    };
-
-    if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { originalFilename: { contains: search, mode: 'insensitive' } },
-        { contentText: { contains: search, mode: 'insensitive' } },
-      ];
-      // Case-insensitive partial match on tags (Prisma array filters are exact/case-sensitive only)
-      const likePattern = `%${search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-      const tagMatches = await prisma.$queryRaw<{ id: string }[]>`
-        SELECT id FROM documents
-        WHERE user_id = ${userId}::uuid AND deleted_at IS NULL
-          AND EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE ${likePattern})`;
-      if (tagMatches.length > 0) {
-        where.OR.push({ id: { in: tagMatches.map((r) => r.id) } });
-      }
-    }
-
-    if (fileType) {
-      where.fileType = fileType;
-    }
-
-    if (dateFrom || dateTo) {
-      where.uploadedAt = {};
-      if (dateFrom) {
-        (where.uploadedAt as Prisma.DateTimeFilter).gte = dateFrom;
-      }
-      if (dateTo) {
-        (where.uploadedAt as Prisma.DateTimeFilter).lte = dateTo;
-      }
-    }
-
-    if (jurisdictionId) {
-      // Include sub-jurisdictions: filtering by "BC" also matches documents tagged with BC municipalities
-      const ids = await jurisdictionService.getSelfAndDescendantIds(jurisdictionId);
-      where.jurisdictions = {
-        some: {
-          jurisdictionId: { in: ids },
-          ...(jurisdictionLevel ? { jurisdiction: { level: jurisdictionLevel } } : {}),
-        },
-      };
-    } else if (jurisdictionLevel) {
-      where.jurisdictions = {
-        some: {
-          jurisdiction: { level: jurisdictionLevel },
-        },
-      };
-    }
-
-    // Build orderBy; id as a tie-breaker keeps pagination stable when sort values collide
-    const orderBy: Prisma.DocumentOrderByWithRelationInput[] = [
-      { [sortBy]: sortOrder },
-      { id: sortOrder },
-    ];
-
-    const [documents, total] = await Promise.all([
-      prisma.document.findMany({
-        where,
-        skip,
-        take: pageSize,
-        orderBy,
-        include: {
-          jurisdictions: {
-            include: {
-              jurisdiction: {
-                select: { id: true, name: true, code: true, level: true, parentId: true },
-              },
-            },
-          },
-        },
-      }),
-      prisma.document.count({ where }),
-    ]);
-
-    return {
-      data: documents.map((doc) => this.formatDocument(doc)),
-      pagination: {
-        page,
-        pageSize,
-        totalItems: total,
-        /** @deprecated alias of totalItems */
-        total,
-        totalPages: Math.ceil(total / pageSize),
-      },
-    };
-  }
-
-  /**
-   * Updates a document's metadata (title, description, tags).
-   */
-  async updateDocument(params: UpdateDocumentParams) {
-    const { userId, documentId, title, description, tags, requestId, actorIp } = params;
-
-    // Fetch existing document
-    const existing = await prisma.document.findUnique({
-      where: { id: documentId },
-    });
-
-    if (!existing || existing.deletedAt) {
-      throw new NotFoundError('Document not found');
-    }
-
-    if (existing.userId !== userId) {
-      throw new NotFoundError('Document not found');
-    }
-
-    // Build update data
-    const updateData: Prisma.DocumentUpdateInput = {};
-    const changes: Record<string, { from: unknown; to: unknown }> = {};
-
-    if (title !== undefined && title !== existing.title) {
-      updateData.title = title;
-      changes['title'] = { from: existing.title, to: title };
-    }
-
-    if (description !== undefined && description !== existing.description) {
-      updateData.description = description;
-      changes['description'] = { from: existing.description, to: description };
-    }
-
-    if (tags !== undefined && JSON.stringify(tags) !== JSON.stringify(existing.tags)) {
-      updateData.tags = tags;
-      changes['tags'] = { from: existing.tags, to: tags };
-    }
-
-    if (Object.keys(updateData).length === 0) {
-      // No changes; return existing document
-      return this.getDocument(documentId, userId);
-    }
-
-    const document = await prisma.document.update({
-      where: { id: documentId },
-      data: updateData,
-      include: {
-        jurisdictions: {
-          include: {
-            jurisdiction: {
-              select: { id: true, name: true, code: true, level: true, parentId: true },
-            },
-          },
-        },
-      },
-    });
-
-    // Audit log (fire-and-forget)
-    auditService.logAction({
-      actorUserId: userId,
-      actorIp,
       action: 'document.update',
       resourceType: 'document',
       resourceId: documentId,
       changes,
-      requestId,
       outcome: 'success',
     });
-
-    logger.info({ userId, documentId, message: 'Document updated successfully' });
-
-    return this.formatDocument(document, { includeContent: true });
   }
 
-  /**
-   * Soft-deletes a document by setting the deletedAt timestamp.
-   */
-  async deleteDocument(documentId: string, userId: string, requestId: string, actorIp: string) {
-    const existing = await prisma.document.findUnique({
-      where: { id: documentId },
-    });
-
-    if (!existing || existing.deletedAt) {
-      throw new NotFoundError('Document not found');
-    }
-
-    if (existing.userId !== userId) {
-      throw new NotFoundError('Document not found');
-    }
-
-    await prisma.document.update({
-      where: { id: documentId },
-      data: { deletedAt: new Date() },
-    });
-
-    // Audit log (fire-and-forget)
-    auditService.logAction({
-      actorUserId: userId,
-      actorIp,
-      action: 'document.delete',
-      resourceType: 'document',
-      resourceId: documentId,
-      requestId,
-      outcome: 'success',
-    });
-
-    logger.info({ userId, documentId, message: 'Document soft-deleted' });
-  }
-
-  /**
-   * Returns a download stream for a document's file from S3.
-   * Creates an audit log for the download event.
-   */
-  async downloadDocument(documentId: string, userId: string, requestId: string, actorIp: string) {
-    const document = await prisma.document.findUnique({
-      where: { id: documentId },
-    });
-
-    if (!document || document.deletedAt) {
-      throw new NotFoundError('Document not found');
-    }
-
-    if (document.userId !== userId) {
-      throw new NotFoundError('Document not found');
-    }
-
-    const fileData = await fileService.getFileStream(document.fileKey);
-
-    // Audit log (fire-and-forget)
-    auditService.logAction({
-      actorUserId: userId,
-      actorIp,
-      action: 'document.download',
-      resourceType: 'document',
-      resourceId: documentId,
-      requestId,
-      outcome: 'success',
-    });
-
-    logger.info({ userId, documentId, message: 'Document downloaded' });
-
-    return {
-      stream: fileData.stream,
-      contentType: fileData.contentType,
-      contentLength: fileData.contentLength,
-      filename: document.originalFilename,
-    };
-  }
-
-  /**
-   * Formats a document record with flattened jurisdiction data.
-   */
-  private formatDocument(
-    doc: {
-      id: string;
-      userId: string;
-      title: string;
-      description: string | null;
-      fileKey: string;
-      fileType: string;
-      fileSizeBytes: number;
-      originalFilename: string;
-      contentText?: string | null;
-      tags: string[];
-      uploadedAt: Date;
-      updatedAt: Date;
-      deletedAt: Date | null;
-      jurisdictions: {
-        jurisdiction: {
-          id: string;
-          name: string;
-          code: string;
-          level: string;
-          parentId: string | null;
-        };
-      }[];
-    },
-    options: { includeContent?: boolean } = {},
-  ) {
-    return {
-      id: doc.id,
-      userId: doc.userId,
-      title: doc.title,
-      description: doc.description,
-      fileType: doc.fileType,
-      fileSizeBytes: doc.fileSizeBytes,
-      originalFilename: doc.originalFilename,
-      tags: doc.tags,
-      ...(options.includeContent ? { contentText: doc.contentText ?? null } : {}),
-      jurisdictions: doc.jurisdictions.map((dj) => dj.jurisdiction),
-      uploadedAt: doc.uploadedAt,
-      updatedAt: doc.updatedAt,
-    };
-  }
+  return getDocument(deps, documentId, userId);
 }
 
-export const documentService = new DocumentService();
+/** Soft delete: the document disappears immediately and is purged after the retention period. */
+export async function deleteDocument(
+  deps: Deps,
+  documentId: string,
+  userId: string,
+): Promise<void> {
+  const rows = await deps.sql`
+    UPDATE documents SET deleted_at = now()
+    WHERE id = ${documentId} AND user_id = ${userId} AND deleted_at IS NULL
+    RETURNING id`;
+  if (rows.length === 0) throw new NotFoundError('Document not found');
+
+  audit(deps, {
+    actorUserId: userId,
+    action: 'document.delete',
+    resourceType: 'document',
+    resourceId: documentId,
+    outcome: 'success',
+  });
+}
+
+export async function downloadDocument(deps: Deps, documentId: string, userId: string) {
+  const [doc] = (await deps.sql`
+    SELECT file_key AS "fileKey", original_filename AS "originalFilename" FROM documents
+    WHERE id = ${documentId} AND user_id = ${userId} AND deleted_at IS NULL`) as {
+    fileKey: string;
+    originalFilename: string;
+  }[];
+  if (!doc) throw new NotFoundError('Document not found');
+
+  const file = await files.getFile(deps, doc.fileKey);
+  audit(deps, {
+    actorUserId: userId,
+    action: 'document.download',
+    resourceType: 'document',
+    resourceId: documentId,
+    outcome: 'success',
+  });
+  return { ...file, filename: doc.originalFilename };
+}

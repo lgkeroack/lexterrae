@@ -1,63 +1,33 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import { jurisdictionService } from '../services/jurisdiction.service.js';
-import { validate } from '../middleware/validate.js';
+import { Hono } from 'hono';
 import { z } from 'zod';
-import { generalLimiter } from '../lib/rate-limit.js';
+import { generalLimiter } from '../middleware/rate-limit.js';
+import { validParams } from '../middleware/validate.js';
+import * as jurisdictions from '../services/jurisdiction.service.js';
+import type { AppEnv } from '../types.js';
 
-const router: ReturnType<typeof Router> = Router();
+const router = new Hono<AppEnv>();
 
 // Public reference data: limited per IP
-router.use(generalLimiter);
+router.use('*', generalLimiter);
 
-const jurisdictionParamsSchema = z.object({
-  id: z.string().uuid('Jurisdiction ID must be a valid UUID'),
+const paramsSchema = z.object({ id: z.string().uuid('Jurisdiction ID must be a valid UUID') });
+
+/** GET /api/jurisdictions — the full hierarchy. */
+router.get('/', async (c) => {
+  c.header('Cache-Control', 'public, max-age=300');
+  return c.json({ data: await jurisdictions.getJurisdictionTree(c.get('deps')) }, 200);
 });
 
-/**
- * GET /api/jurisdictions
- * Returns the full jurisdiction hierarchy tree.
- * Federal -> Provincial -> Municipal, cached in Redis for 24 hours.
- */
-router.get('/', async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const tree = await jurisdictionService.getJurisdictionTree();
-    res.status(200).json({ data: tree });
-  } catch (err) {
-    next(err);
-  }
+/** GET /api/jurisdictions/provinces — provinces/territories with municipalities. */
+router.get('/provinces', async (c) => {
+  c.header('Cache-Control', 'public, max-age=300');
+  return c.json({ data: await jurisdictions.getProvinces(c.get('deps')) }, 200);
 });
 
-/**
- * GET /api/jurisdictions/provinces
- * Returns provinces/territories with their municipalities (shared `ProvinceData` shape).
- * Must be registered before "/:id".
- */
-router.get('/provinces', async (_req: Request, res: Response, next: NextFunction) => {
-  try {
-    const provinces = await jurisdictionService.getProvinces();
-    res.status(200).json({ data: provinces });
-  } catch (err) {
-    next(err);
-  }
+/** GET /api/jurisdictions/:id — one jurisdiction with its parent and children. */
+router.get('/:id', async (c) => {
+  const { id } = validParams(c, paramsSchema);
+  return c.json({ data: await jurisdictions.getJurisdictionById(c.get('deps'), id) }, 200);
 });
-
-/**
- * GET /api/jurisdictions/:id
- * Returns a single jurisdiction by ID, including parent and children.
- */
-router.get(
-  '/:id',
-  validate({ params: jurisdictionParamsSchema }),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const jurisdiction = await jurisdictionService.getJurisdictionById(
-        req.params['id'] as string,
-      );
-      res.status(200).json({ data: jurisdiction });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
 
 export default router;

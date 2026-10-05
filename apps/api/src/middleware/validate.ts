@@ -1,43 +1,48 @@
-import type { Request, Response, NextFunction } from 'express';
-import { ZodError, type ZodIssue, type ZodSchema } from 'zod';
+import type { Context } from 'hono';
+import { ZodError, type ZodSchema, type z } from 'zod';
+import { PayloadTooLargeError, ValidationError } from '../lib/errors.js';
 
-type ValidationTarget = 'body' | 'query' | 'params';
+type Target = 'body' | 'query' | 'params';
 
-interface ValidationSchemas {
-  body?: ZodSchema;
-  query?: ZodSchema;
-  params?: ZodSchema;
+function check<S extends ZodSchema>(target: Target, schema: S, input: unknown): z.infer<S> {
+  const result = schema.safeParse(input);
+  if (!result.success) {
+    // Prefix paths with the request part so the client knows where the problem is (e.g. "body.email")
+    throw new ZodError(
+      result.error.errors.map((issue) => ({ ...issue, path: [target, ...issue.path] })),
+    );
+  }
+  return result.data;
 }
 
-export function validate(schemas: ValidationSchemas) {
-  return (req: Request, _res: Response, next: NextFunction): void => {
-    const targets: ValidationTarget[] = ['body', 'query', 'params'];
-    const issues: ZodIssue[] = [];
+const MAX_JSON_BYTES = 1024 * 1024;
 
-    for (const target of targets) {
-      const schema = schemas[target];
-      if (!schema) continue;
-
-      // A missing body (e.g. no Content-Type) is treated as an empty object so the
-      // schema reports which fields are required instead of "Expected object".
-      const input: unknown = target === 'body' ? (req.body ?? {}) : req[target];
-      const result = schema.safeParse(input);
-      if (!result.success) {
-        // Prefix paths with the target so the client knows where the problem is (e.g. "body.email")
-        issues.push(
-          ...result.error.errors.map((issue) => ({ ...issue, path: [target, ...issue.path] })),
-        );
-      } else {
-        // Replace with parsed (and potentially transformed) data
-        req[target] = result.data;
-      }
+/** Parses and validates a JSON body. A missing body is treated as `{}` so required-field messages show. */
+export async function validJson<S extends ZodSchema>(c: Context, schema: S): Promise<z.infer<S>> {
+  const declared = Number(c.req.header('content-length') ?? '0');
+  if (declared > MAX_JSON_BYTES) throw new PayloadTooLargeError('Request body is too large');
+  const text = await c.req.text();
+  if (text.length > MAX_JSON_BYTES) throw new PayloadTooLargeError('Request body is too large');
+  let body: unknown = {};
+  if (text.trim() !== '') {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new ValidationError('Request body is not valid JSON');
     }
+  }
+  return check('body', schema, body);
+}
 
-    if (issues.length > 0) {
-      next(new ZodError(issues));
-      return;
-    }
+/** Validates already-parsed fields (e.g. multipart form fields) as the request body. */
+export function validFields<S extends ZodSchema>(schema: S, fields: unknown): z.infer<S> {
+  return check('body', schema, fields);
+}
 
-    next();
-  };
+export function validQuery<S extends ZodSchema>(c: Context, schema: S): z.infer<S> {
+  return check('query', schema, c.req.query());
+}
+
+export function validParams<S extends ZodSchema>(c: Context, schema: S): z.infer<S> {
+  return check('params', schema, c.req.param());
 }

@@ -1,7 +1,7 @@
 export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 export const MAX_FILE_SIZE_MB = 50;
 
-/** Must stay in sync with apps/api/src/services/file.service.ts (server validates by magic bytes). */
+/** Upload types accepted by the API (it validates content by magic bytes, see apps/api/src/services/file.service.ts). */
 export const ALLOWED_MIME_TYPES = [
   'application/pdf',
   'text/plain',

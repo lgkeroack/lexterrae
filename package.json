@@ -2,13 +2,13 @@
   "name": "lex-terrae",
   "private": true,
   "version": "0.1.0",
-  "description": "Canadian Jurisdiction Document Management Platform",
+  "description": "Canadian jurisdiction document management — Cloudflare Workers + Neon",
   "scripts": {
-    "dev": "pnpm --parallel -r run dev",
-    "dev:api": "pnpm --filter @lexterrae/api dev",
-    "dev:web": "pnpm --filter @lexterrae/web dev",
-    "build": "pnpm -r run build",
-    "lint": "pnpm -r run lint",
+    "dev": "pnpm --parallel --filter @lexterrae/web --filter @lexterrae/api dev",
+    "build": "pnpm --filter @lexterrae/web build && pnpm --filter @lexterrae/api build",
+    "deploy": "pnpm --filter @lexterrae/web build && pnpm --filter @lexterrae/api deploy",
+    "db:migrate": "pnpm --filter @lexterrae/api db:migrate",
+    "db:seed": "pnpm --filter @lexterrae/api db:seed",
     "typecheck": "pnpm -r run typecheck",
     "test": "pnpm -r run test",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml}\"",
@@ -20,11 +20,9 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "@prisma/client",
-      "@prisma/engines",
-      "bcrypt",
       "esbuild",
-      "prisma"
+      "workerd",
+      "sharp"
     ]
   }
 }
