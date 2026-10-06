@@ -1,7 +1,7 @@
 /**
  * Simplified SVG path data for the Canada jurisdiction map.
  * Each province/territory has an approximate outline path and a label anchor.
- * Codes match the jurisdiction `code` column seeded by the API (apps/api/prisma/seed.ts).
+ * Codes match the jurisdiction `code` column seeded by the API (apps/api/db/seed.ts).
  */
 export interface ProvinceMapData {
   code: string;

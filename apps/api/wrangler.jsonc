@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // One Worker serves the web app (static assets) and the API under /api, on the same origin.
+  "name": "lexterrae",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // The built SPA (apps/web/dist). /api/* and /assets/* reach the Worker; every other path is a
+  // static asset, with unknown paths falling back to index.html for client-side routing.
+  // (/assets/* goes through the Worker so a missing hashed file is a 404, not the SPA HTML.)
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/assets/*"]
+  },
+
+  // Uploaded files. Create with: npx wrangler r2 bucket create lexterrae-uploads
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "lexterrae-uploads" }],
+
+  // Per-minute API limits (07-SECURITY.md §1.3). Longer-window limits live in Postgres.
+  "ratelimits": [
+    { "name": "API_RATE_LIMITER", "namespace_id": "1001", "simple": { "limit": 100, "period": 60 } },
+    { "name": "SEARCH_RATE_LIMITER", "namespace_id": "1002", "simple": { "limit": 30, "period": 60 } }
+  ],
+
+  // Purge documents soft-deleted more than 30 days ago, expired revoked tokens and old
+  // rate-limit counters.
+  "triggers": { "crons": ["17 */6 * * *"] },
+
+  // Password hashing and PDF text extraction need more CPU than the Free plan allows
+  // (Workers Paid plan required).
+  "limits": { "cpu_ms": 30000 },
+
+  // Non-secret configuration. Secrets (set with `npx wrangler secret put <NAME>`):
+  //   DATABASE_URL  Neon pooled connection string (…-pooler.….neon.tech)
+  //   JWT_SECRET    at least 32 random characters
+  // Local development reads secrets and overrides from apps/api/.dev.vars.
+  "vars": {
+    "ENVIRONMENT": "production",
+    "JWT_EXPIRY": "15m",
+    "JWT_REFRESH_EXPIRY": "7d",
+    "MAX_FILE_SIZE_MB": "50"
+  }
+}

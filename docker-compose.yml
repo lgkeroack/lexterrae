@@ -1,53 +1,39 @@
+# Local database for development: Postgres plus a Neon proxy, so the app talks to it with the
+# same Neon serverless driver (HTTP/WebSocket) it uses against Neon in production.
+#
+#   docker compose up -d
+#
+# Connection string (see apps/api/.dev.vars.example and .env.example):
+#   DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/lexterrae
+#   NEON_LOCAL_PROXY=localhost:4444
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: lexterrae-postgres
     environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: lexterrae
-      POSTGRES_USER: lexterrae
-      POSTGRES_PASSWORD: lexterrae_dev
     ports:
       - '5432:5432'
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pg17_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U lexterrae']
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  redis:
-    image: redis:7-alpine
-    container_name: lexterrae-redis
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  minio:
-    image: minio/minio:latest
-    container_name: lexterrae-minio
+  neon-proxy:
+    image: ghcr.io/timowilhelm/local-neon-http-proxy:main
+    container_name: lexterrae-neon-proxy
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-    command: server /data --console-address ":9001"
+      PG_CONNECTION_STRING: postgres://postgres:postgres@postgres:5432/postgres
     ports:
-      - '9000:9000'
-      - '9001:9001'
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - '4444:4444'
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
+  pg17_data:

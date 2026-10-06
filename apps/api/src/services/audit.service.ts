@@ -1,69 +1,61 @@
-import { createHmac } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
-import { prisma } from '../config/database.js';
-import { env } from '../config/env.js';
-import { createModuleLogger } from '../lib/logger.js';
+import type { AuditAction } from '@lexterrae/shared';
+import type { Deps } from '../types.js';
 
-const logger = createModuleLogger('audit.service');
-
-export interface AuditLogEntry {
-  actorUserId?: string;
-  actorIp: string;
-  action: string;
+export interface AuditEntry {
+  actorUserId?: string | null;
+  action: AuditAction;
   resourceType: string;
   resourceId: string;
   changes?: Record<string, unknown>;
-  requestId: string;
   outcome: 'success' | 'failure';
   failureReason?: string;
+  /** Defaults to the request's client IP; "system" for scheduled jobs. */
+  actorIp?: string;
 }
 
-export class AuditService {
-  /**
-   * Creates an audit log entry recording an action performed on a resource.
-   */
-  async logAction(entry: AuditLogEntry): Promise<void> {
-    try {
-      await prisma.auditLog.create({
-        data: {
-          actorUserId: entry.actorUserId || null,
-          actorIpHash: this.hashIP(entry.actorIp),
-          action: entry.action,
-          resourceType: entry.resourceType,
-          resourceId: entry.resourceId,
-          changes: entry.changes as Prisma.InputJsonValue ?? undefined,
-          requestId: entry.requestId,
-          outcome: entry.outcome,
-          failureReason: entry.failureReason ?? null,
-        },
-      });
+/**
+ * Keyed hash of the client IP (HMAC-SHA256 with JWT_SECRET) so raw IPs are never stored,
+ * and the small IPv4 space cannot be reversed with a lookup table.
+ */
+async function hashIp(secret: string, ip: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(ip));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
 
-      logger.debug({
-        message: 'Audit log entry created',
-        action: entry.action,
-        resourceType: entry.resourceType,
-        resourceId: entry.resourceId,
-        outcome: entry.outcome,
-      });
-    } catch (err) {
-      // Audit logging failures should not break the main flow
-      logger.error({
-        message: 'Failed to create audit log entry',
-        action: entry.action,
-        resourceType: entry.resourceType,
-        resourceId: entry.resourceId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  /**
-   * Hashes an IP address using HMAC-SHA256 keyed with JWT_SECRET.
-   * Keyed hash prevents rainbow-table attacks against the limited IPv4 space.
-   */
-  hashIP(ip: string): string {
-    return createHmac('sha256', env.JWT_SECRET).update(ip).digest('hex');
+/**
+ * Writes an audit log entry. Never throws: audit failures are logged but must not break
+ * the action being audited.
+ */
+export async function writeAudit(deps: Deps, entry: AuditEntry): Promise<void> {
+  try {
+    const ipHash = await hashIp(deps.config.JWT_SECRET, entry.actorIp ?? deps.clientIp);
+    await deps.sql`
+      INSERT INTO audit_logs
+        (actor_user_id, actor_ip_hash, action, resource_type, resource_id, changes,
+         request_id, outcome, failure_reason)
+      VALUES
+        (${entry.actorUserId ?? null}, ${ipHash}, ${entry.action}, ${entry.resourceType},
+         ${entry.resourceId}, ${entry.changes ? JSON.stringify(entry.changes) : null}::jsonb,
+         ${deps.requestId}, ${entry.outcome}, ${entry.failureReason ?? null})`;
+  } catch (err) {
+    deps.log.error({
+      module: 'audit',
+      message: 'Failed to write audit log entry',
+      action: entry.action,
+      resourceId: entry.resourceId,
+      error: err,
+    });
   }
 }
 
-export const auditService = new AuditService();
+/** Records an audit entry after the response is sent. */
+export function audit(deps: Deps, entry: AuditEntry): void {
+  deps.defer(writeAudit(deps, entry));
+}

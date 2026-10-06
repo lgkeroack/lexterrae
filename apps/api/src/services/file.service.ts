@@ -1,25 +1,13 @@
-import { Readable } from 'node:stream';
-import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
-import { Worker } from 'node:worker_threads';
-import path from 'node:path';
-import { createReadStream } from 'node:fs';
-import { mkdir, readFile, writeFile, unlink, stat } from 'node:fs/promises';
 import { fileTypeFromBuffer } from 'file-type';
-import { DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
-import { s3Client } from '../config/s3.js';
-import { env } from '../config/env.js';
+import { getDocumentProxy } from 'unpdf';
+import { ALLOWED_EXTENSIONS } from '@lexterrae/shared';
 import {
   FileTypeError,
-  InternalError,
   NotFoundError,
   ServiceUnavailableError,
   ValidationError,
 } from '../lib/errors.js';
-import { createModuleLogger } from '../lib/logger.js';
-
-const logger = createModuleLogger('file.service');
+import type { Deps } from '../types.js';
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   'application/pdf': 'pdf',
@@ -34,56 +22,45 @@ const ALLOWED_MIME_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
 };
 
-const ALLOWED_EXTENSIONS = new Set(Object.values(ALLOWED_MIME_TYPES));
+const ALLOWED_LIST = ALLOWED_EXTENSIONS.map((e) => e.slice(1)).join(', ');
 
 /** Filename extensions accepted for each detected type (e.g. ".jpeg" for JPEG). */
-const EXTENSION_ALIASES: Record<string, string[]> = {
-  jpg: ['jpg', 'jpeg'],
-};
+const EXTENSION_ALIASES: Record<string, string[]> = { jpg: ['jpg', 'jpeg'] };
 
 /** Legacy Office formats are OLE2 compound files; file-type reports them all as application/x-cfb. */
-const CFB_TYPES: Record<string, { mimeType: string; extension: string }> = {
+const CFB_TYPES: Record<string, DetectedType> = {
   doc: { mimeType: 'application/msword', extension: 'doc' },
   xls: { mimeType: 'application/vnd.ms-excel', extension: 'xls' },
 };
 
-const TEXT_TYPES: Record<string, { mimeType: string; extension: string }> = {
+const TEXT_TYPES: Record<string, DetectedType> = {
   txt: { mimeType: 'text/plain', extension: 'txt' },
   csv: { mimeType: 'text/csv', extension: 'csv' },
 };
 
 /**
- * DEV ONLY: when LOCAL_STORAGE_DIR is set and NODE_ENV=development, files are stored on local
- * disk instead of S3/MinIO so uploads can be exercised without object storage running.
+ * Magic-byte detection only needs the start of the file. 64 KB leaves room for zip-based Office
+ * formats (docx/xlsx), whose detection reads a few entries into the archive.
  */
-const LOCAL_STORAGE_DIR =
-  env.NODE_ENV === 'development' && process.env['LOCAL_STORAGE_DIR']
-    ? path.resolve(process.env['LOCAL_STORAGE_DIR'])
-    : null;
+export const SNIFF_BYTES = 64 * 1024;
 
-function localPath(fileKey: string): string {
-  const full = path.resolve(LOCAL_STORAGE_DIR!, fileKey);
-  if (!full.startsWith(LOCAL_STORAGE_DIR! + path.sep)) {
-    throw new InternalError('Invalid storage key');
-  }
-  return full;
-}
-
-const PDF_EXTRACTION_TIMEOUT_MS = 30_000;
 const MAX_EXTRACTED_TEXT_CHARS = 5_000_000;
 
-/**
- * pdf-parse (pdf.js 1.x) can emit unhandled promise rejections for malformed PDFs, which
- * would crash the whole API process. Extraction therefore runs in a throwaway worker thread.
- */
-const PDF_WORKER_SOURCE = `
-const { parentPort, workerData } = require('node:worker_threads');
-const pdfParse = require(workerData.modulePath);
-process.on('unhandledRejection', (e) => { throw e; });
-pdfParse(Buffer.from(workerData.buffer))
-  .then((r) => parentPort.postMessage({ text: r.text || '' }))
-  .catch((e) => parentPort.postMessage({ error: e && e.message ? e.message : String(e) }));
-`;
+// PDF text extraction runs after the upload has been stored (see extractPdfText). These caps keep
+// its memory and CPU bounded; a PDF that exceeds them is still stored, just not fully searchable.
+const PDF_EXTRACTION_MAX_BYTES = 20 * 1024 * 1024;
+const PDF_EXTRACTION_MAX_PAGES = 1000;
+const PDF_EXTRACTION_BUDGET_MS = 20_000;
+
+export interface DetectedType {
+  mimeType: string;
+  extension: string;
+}
+
+function extensionOf(filename: string): string {
+  const dot = filename.lastIndexOf('.');
+  return dot > 0 ? filename.slice(dot + 1).toLowerCase() : '';
+}
 
 /** Removes null bytes / control characters (Postgres TEXT rejects \u0000) and normalizes whitespace. */
 function sanitizeExtractedText(text: string): string {
@@ -96,296 +73,223 @@ function sanitizeExtractedText(text: string): string {
     .slice(0, MAX_EXTRACTED_TEXT_CHARS);
 }
 
-function isProbablyText(buffer: Buffer): boolean {
-  if (buffer.includes(0)) return false;
+/** True if the bytes (possibly a prefix of the file) are UTF-8 text without NUL bytes. */
+function isUtf8TextPrefix(bytes: Uint8Array): boolean {
+  if (bytes.includes(0)) return false;
   try {
-    new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+    // stream: true tolerates a multi-byte character cut off at the end of a prefix
+    new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes, { stream: true });
     return true;
   } catch {
     return false;
   }
 }
 
-export class FileService {
-  /**
-   * Validates a file's type using magic byte detection.
-   * Returns the detected MIME type and extension.
-   */
-  async validateFileType(
-    buffer: Buffer,
-    originalFilename: string,
-  ): Promise<{ mimeType: string; extension: string }> {
-    if (buffer.length === 0) {
-      throw new ValidationError('The uploaded file is empty');
+/**
+ * Validates a file's type by magic bytes; the filename extension must agree with the content.
+ * `bytes` may be just the start of the file (SNIFF_BYTES). Text files are fully checked later
+ * by readTextFile.
+ */
+export async function validateFileType(bytes: Uint8Array, filename: string): Promise<DetectedType> {
+  if (bytes.length === 0) throw new ValidationError('The uploaded file is empty');
+
+  const fileExt = extensionOf(filename);
+  const detected = await fileTypeFromBuffer(bytes);
+
+  if (detected) {
+    let result: DetectedType | undefined;
+    if (detected.mime === 'application/x-cfb') {
+      result = CFB_TYPES[fileExt];
+    } else {
+      const ext = ALLOWED_MIME_TYPES[detected.mime];
+      if (ext) result = { mimeType: detected.mime, extension: ext };
     }
-
-    const fileExt = path.extname(originalFilename).toLowerCase().replace('.', '');
-
-    // Detect file type from magic bytes
-    const detected = await fileTypeFromBuffer(buffer);
-
-    if (detected) {
-      let result: { mimeType: string; extension: string } | undefined;
-      if (detected.mime === 'application/x-cfb') {
-        result = CFB_TYPES[fileExt];
-      } else {
-        const ext = ALLOWED_MIME_TYPES[detected.mime];
-        if (ext) result = { mimeType: detected.mime, extension: ext };
-      }
-
-      if (!result) {
-        throw new FileTypeError(
-          `File type "${detected.mime}" is not supported. Allowed types: ${Array.from(ALLOWED_EXTENSIONS).join(', ')}`,
-        );
-      }
-
-      // SECURITY: the filename extension must agree with the detected content type
-      const acceptedExts = EXTENSION_ALIASES[result.extension] ?? [result.extension];
-      if (!acceptedExts.includes(fileExt)) {
-        throw new FileTypeError(
-          `File content (${result.extension}) does not match the file extension ".${fileExt || '(none)'}"`,
-        );
-      }
-      return result;
+    if (!result) {
+      throw new FileTypeError(
+        `File type "${detected.mime}" is not supported. Allowed types: ${ALLOWED_LIST}`,
+      );
     }
-
-    // Text-based files have no magic bytes: require a text extension AND valid UTF-8 without NUL bytes
-    const textType = TEXT_TYPES[fileExt];
-    if (textType) {
-      if (!isProbablyText(buffer)) {
-        throw new FileTypeError(`File has a .${fileExt} extension but is not valid UTF-8 text`);
-      }
-      return textType;
+    // SECURITY: the filename extension must agree with the detected content type
+    const acceptedExts = EXTENSION_ALIASES[result.extension] ?? [result.extension];
+    if (!acceptedExts.includes(fileExt)) {
+      throw new FileTypeError(
+        `File content (${result.extension}) does not match the file extension ".${fileExt || '(none)'}"`,
+      );
     }
-
-    throw new FileTypeError(
-      `Unable to determine file type. Allowed types: ${Array.from(ALLOWED_EXTENSIONS).join(', ')}`,
-    );
+    return result;
   }
 
-  /**
-   * Sanitizes a filename by stripping path traversal characters,
-   * control characters, and truncating to a safe length.
-   */
-  sanitizeFilename(filename: string): string {
-    // Strip path components
-    let sanitized = path.basename(filename);
-
-    // Remove control characters and null bytes
-    sanitized = sanitized.replace(/[\x00-\x1f\x7f]/g, '');
-
-    // Remove path traversal sequences
-    sanitized = sanitized.replace(/\.\./g, '');
-
-    // Replace any remaining unsafe characters
-    sanitized = sanitized.replace(/[<>:"/\\|?*]/g, '_');
-
-    // Collapse multiple underscores/spaces
-    sanitized = sanitized.replace(/_{2,}/g, '_').replace(/\s+/g, ' ').trim();
-
-    // Truncate to 200 characters (leaving room for extension)
-    if (sanitized.length > 200) {
-      const ext = path.extname(sanitized);
-      const baseName = path.basename(sanitized, ext);
-      sanitized = baseName.slice(0, 200 - ext.length) + ext;
+  // Text-based files have no magic bytes: require a text extension AND valid UTF-8 without NUL bytes
+  const textType = TEXT_TYPES[fileExt];
+  if (textType) {
+    if (!isUtf8TextPrefix(bytes)) {
+      throw new FileTypeError(`File has a .${fileExt} extension but is not valid UTF-8 text`);
     }
-
-    // If empty after sanitization, use a default
-    if (!sanitized || sanitized === '.' || sanitized === '..') {
-      sanitized = 'unnamed_file';
-    }
-
-    return sanitized;
+    return textType;
   }
 
-  /**
-   * Extracts searchable text from an uploaded file. Never throws: extraction failures
-   * (encrypted, image-only or malformed files) are logged and yield null.
-   */
-  async extractText(buffer: Buffer, extension: string): Promise<string | null> {
-    if (extension === 'pdf') {
-      const text = await this.extractPdfText(buffer);
-      return text ? text : null;
+  throw new FileTypeError(`Unable to determine file type. Allowed types: ${ALLOWED_LIST}`);
+}
+
+/** Strips path components, control characters and unsafe characters; caps length at 200. */
+export function sanitizeFilename(filename: string): string {
+  let sanitized = filename.split(/[\\/]/).pop() ?? '';
+  sanitized = sanitized
+    .replace(/[\x00-\x1f\x7f]/g, '')
+    .replace(/\.\./g, '')
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (sanitized.length > 200) {
+    const dot = sanitized.lastIndexOf('.');
+    const ext = dot > 0 ? sanitized.slice(dot) : '';
+    sanitized = sanitized.slice(0, 200 - ext.length) + ext;
+  }
+  if (!sanitized || sanitized === '.' || sanitized === '..') sanitized = 'unnamed_file';
+  return sanitized;
+}
+
+/**
+ * Reads a .txt/.csv upload as text, streaming so only the searchable prefix is kept in memory.
+ * The whole file must be valid UTF-8 without NUL bytes (otherwise 415).
+ */
+export async function readTextFile(file: Blob, extension: string): Promise<string | null> {
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
+  const reader = file.stream().getReader();
+  let text = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value.includes(0)) throw new TypeError('NUL byte');
+      const chunk = decoder.decode(value, { stream: true });
+      if (text.length < MAX_EXTRACTED_TEXT_CHARS) text += chunk;
     }
-    if (extension === 'txt' || extension === 'csv') {
-      return sanitizeExtractedText(buffer.toString('utf8')) || null;
-    }
+    text += decoder.decode();
+  } catch {
+    await reader.cancel().catch(() => undefined);
+    throw new FileTypeError(`File has a .${extension} extension but is not valid UTF-8 text`);
+  }
+  return sanitizeExtractedText(text) || null;
+}
+
+/** Lets timers run (Workers only advance the clock across I/O or timers) and checks the budget. */
+async function yieldAndCheck(deadline: number): Promise<boolean> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return Date.now() < deadline;
+}
+
+/**
+ * Extracts searchable text from a PDF. Never throws: failures (encrypted, image-only or
+ * malformed files) are logged and yield null.
+ *
+ * Work is bounded by file size, page count, extracted length and a time budget checked between
+ * pages. Callers run this after the document is stored, so even if a pathological file exhausts
+ * the Worker's CPU limit only its search text is lost, never the upload.
+ */
+export async function extractPdfText(deps: Deps, file: Blob): Promise<string | null> {
+  if (file.size > PDF_EXTRACTION_MAX_BYTES) {
+    deps.log.info({
+      module: 'file',
+      message: 'PDF too large for text extraction',
+      size: file.size,
+    });
     return null;
   }
-
-  /**
-   * Extracts text content from a PDF buffer using pdf-parse, isolated in a worker thread.
-   */
-  async extractPdfText(buffer: Buffer): Promise<string> {
-    try {
-      const modulePath = createRequire(import.meta.url).resolve('pdf-parse/lib/pdf-parse.js');
-      const text = await new Promise<string>((resolve, reject) => {
-        const worker = new Worker(PDF_WORKER_SOURCE, {
-          eval: true,
-          workerData: { modulePath, buffer: new Uint8Array(buffer) },
+  const deadline = Date.now() + PDF_EXTRACTION_BUDGET_MS;
+  let pdf: Awaited<ReturnType<typeof getDocumentProxy>> | undefined;
+  try {
+    // pdf.js takes ownership of (detaches) this buffer; nothing else uses it
+    pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
+    const pages = Math.min(pdf.numPages, PDF_EXTRACTION_MAX_PAGES);
+    let text = '';
+    for (let i = 1; i <= pages && text.length < MAX_EXTRACTED_TEXT_CHARS; i++) {
+      if (!(await yieldAndCheck(deadline))) {
+        deps.log.warn({
+          module: 'file',
+          message: 'PDF text extraction stopped at time budget',
+          page: i,
         });
-        const timer = setTimeout(() => {
-          void worker.terminate();
-          reject(new Error('PDF text extraction timed out'));
-        }, PDF_EXTRACTION_TIMEOUT_MS);
-        worker.once('message', (msg: { text?: string; error?: string }) => {
-          clearTimeout(timer);
-          void worker.terminate();
-          if (msg.error !== undefined) reject(new Error(msg.error));
-          else resolve(msg.text ?? '');
-        });
-        worker.once('error', (err) => {
-          clearTimeout(timer);
-          reject(err);
-        });
-        worker.once('exit', (code) => {
-          clearTimeout(timer);
-          reject(new Error(`PDF extraction worker exited with code ${code}`));
-        });
-      });
-      return sanitizeExtractedText(text);
-    } catch (err) {
-      logger.warn({
-        message: 'Failed to extract PDF text',
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return '';
-    }
-  }
-
-  /**
-   * Uploads a file buffer to S3/MinIO.
-   */
-  async streamToS3(
-    fileKey: string,
-    buffer: Buffer,
-    mimeType: string,
-    originalFilename: string,
-  ): Promise<void> {
-    if (LOCAL_STORAGE_DIR) {
-      const target = localPath(fileKey);
-      await mkdir(path.dirname(target), { recursive: true });
-      await writeFile(target, buffer);
-      await writeFile(`${target}.mime`, mimeType);
-      return;
-    }
-    try {
-      const upload = new Upload({
-        client: s3Client,
-        params: {
-          Bucket: env.S3_BUCKET,
-          Key: fileKey,
-          Body: buffer,
-          ContentType: mimeType,
-          Metadata: {
-            'original-filename': encodeURIComponent(originalFilename),
-          },
-        },
-        queueSize: 4,
-        partSize: 5 * 1024 * 1024, // 5 MB
-      });
-
-      await upload.done();
-      logger.info({ message: 'File uploaded to S3', fileKey, mimeType });
-    } catch (err) {
-      logger.error({
-        message: 'Failed to upload file to S3',
-        fileKey,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw new ServiceUnavailableError(
-        'File storage is temporarily unavailable. Please try again shortly.',
-      );
-    }
-  }
-
-  /**
-   * Deletes a file from S3/MinIO.
-   */
-  async deleteFromS3(fileKey: string): Promise<void> {
-    if (LOCAL_STORAGE_DIR) {
-      await unlink(localPath(fileKey)).catch(() => undefined);
-      await unlink(`${localPath(fileKey)}.mime`).catch(() => undefined);
-      return;
-    }
-    try {
-      await s3Client.send(
-        new DeleteObjectCommand({
-          Bucket: env.S3_BUCKET,
-          Key: fileKey,
-        }),
-      );
-      logger.info({ message: 'File deleted from S3', fileKey });
-    } catch (err) {
-      logger.error({
-        message: 'Failed to delete file from S3',
-        fileKey,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw new ServiceUnavailableError(
-        'File storage is temporarily unavailable. Please try again shortly.',
-      );
-    }
-  }
-
-  /**
-   * Generates a UUID-based S3 key for a file upload.
-   * Format: uploads/{userId}/{uuid}.{ext}
-   */
-  generateFileKey(userId: string, extension: string): string {
-    const uuid = randomUUID();
-    return `uploads/${userId}/${uuid}.${extension}`;
-  }
-
-  /**
-   * Retrieves a file from S3 and returns a readable stream along with metadata.
-   */
-  async getFileStream(
-    fileKey: string,
-  ): Promise<{ stream: Readable; contentType: string; contentLength: number }> {
-    if (LOCAL_STORAGE_DIR) {
-      const target = localPath(fileKey);
-      try {
-        const info = await stat(target);
-        const contentType =
-          (await readFile(`${target}.mime`, 'utf8').catch(() => '')) || 'application/octet-stream';
-        return { stream: createReadStream(target), contentType, contentLength: info.size };
-      } catch {
-        throw new NotFoundError('File not found in storage');
+        break;
       }
-    }
-    try {
-      const response = await s3Client.send(
-        new GetObjectCommand({
-          Bucket: env.S3_BUCKET,
-          Key: fileKey,
-        }),
-      );
-
-      if (!response.Body) {
-        throw new InternalError('Empty response from storage');
+      const content = await (await pdf.getPage(i)).getTextContent();
+      for (const item of content.items) {
+        if ('str' in item) text += item.str + (item.hasEOL ? '\n' : '');
       }
-
-      return {
-        stream: response.Body as Readable,
-        contentType: response.ContentType || 'application/octet-stream',
-        contentLength: response.ContentLength || 0,
-      };
-    } catch (err) {
-      if (err instanceof InternalError) throw err;
-      if (err instanceof Error && (err.name === 'NoSuchKey' || err.name === 'NotFound')) {
-        throw new NotFoundError('File not found in storage');
-      }
-      logger.error({
-        message: 'Failed to retrieve file from S3',
-        fileKey,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw new ServiceUnavailableError(
-        'File storage is temporarily unavailable. Please try again shortly.',
-      );
+      text += '\n';
     }
+    return sanitizeExtractedText(text) || null;
+  } catch (err) {
+    deps.log.warn({ module: 'file', message: 'Failed to extract PDF text', error: err });
+    return null;
+  } finally {
+    await pdf?.loadingTask.destroy().catch(() => undefined);
   }
 }
 
-export const fileService = new FileService();
+/** Storage key: uploads/{userId}/{uuid}.{ext} — never derived from user input. */
+export function generateFileKey(userId: string, extension: string): string {
+  return `uploads/${userId}/${crypto.randomUUID()}.${extension}`;
+}
+
+function storageUnavailable(
+  deps: Deps,
+  action: string,
+  fileKey: string,
+  err: unknown,
+): ServiceUnavailableError {
+  deps.log.error({
+    module: 'file',
+    message: `Failed to ${action} file in R2`,
+    fileKey,
+    error: err,
+  });
+  return new ServiceUnavailableError(
+    'File storage is temporarily unavailable. Please try again shortly.',
+  );
+}
+
+export async function putFile(
+  deps: Deps,
+  fileKey: string,
+  bytes: Blob | Uint8Array,
+  mimeType: string,
+  originalFilename: string,
+): Promise<void> {
+  try {
+    await deps.bucket.put(fileKey, bytes, {
+      httpMetadata: { contentType: mimeType },
+      customMetadata: { originalFilename: encodeURIComponent(originalFilename) },
+    });
+  } catch (err) {
+    throw storageUnavailable(deps, 'store', fileKey, err);
+  }
+}
+
+export async function deleteFile(deps: Deps, fileKey: string): Promise<void> {
+  try {
+    await deps.bucket.delete(fileKey);
+  } catch (err) {
+    throw storageUnavailable(deps, 'delete', fileKey, err);
+  }
+}
+
+export async function getFile(
+  deps: Deps,
+  fileKey: string,
+): Promise<{ body: ReadableStream; contentType: string; contentLength: number }> {
+  let object: R2ObjectBody | null;
+  try {
+    object = await deps.bucket.get(fileKey);
+  } catch (err) {
+    throw storageUnavailable(deps, 'read', fileKey, err);
+  }
+  if (!object) throw new NotFoundError('File not found in storage');
+  return {
+    body: object.body,
+    contentType: object.httpMetadata?.contentType ?? 'application/octet-stream',
+    contentLength: object.size,
+  };
+}

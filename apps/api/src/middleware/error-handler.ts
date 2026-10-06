@@ -1,37 +1,28 @@
-import type { Request, Response, NextFunction } from 'express';
+import type { Context, ErrorHandler, NotFoundHandler } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
-import { MulterError } from 'multer';
-import { Prisma } from '@prisma/client';
 import type { ApiErrorResponse, ApiFieldError } from '@lexterrae/shared';
-import { env } from '../config/env.js';
+import { ConfigError } from '../env.js';
+import {
+  isNeonDbError,
+  PG_DATA_EXCEPTION_CLASS,
+  PG_FOREIGN_KEY_VIOLATION,
+  PG_UNIQUE_VIOLATION,
+} from '../lib/db.js';
 import {
   AppError,
   ConflictError,
-  FileSizeError,
+  ForbiddenError,
   NotFoundError,
   PayloadTooLargeError,
   ServiceUnavailableError,
   ValidationError,
 } from '../lib/errors.js';
-import { logger } from '../lib/logger.js';
+import { rootLogger } from '../lib/logger.js';
+import type { AppEnv } from '../types.js';
 
 const PROBLEM_BASE = 'https://lexterrae.io/problems';
-
-/** Errors thrown by body-parser (express.json / urlencoded) carry an HTTP status and a type. */
-interface BodyParserError extends Error {
-  status?: number;
-  statusCode?: number;
-  type?: string;
-  expose?: boolean;
-}
-
-function isBodyParserError(err: Error): err is BodyParserError {
-  const candidate = err as BodyParserError;
-  return (
-    typeof candidate.type === 'string' &&
-    typeof (candidate.status ?? candidate.statusCode) === 'number'
-  );
-}
 
 function titleFromCode(code: string): string {
   return code
@@ -48,74 +39,46 @@ function summarizeIssues(issues: ApiFieldError[]): string {
   return messages.join('. ').replace(/\.\./g, '.');
 }
 
-/**
- * Translates library errors (body-parser, multer, Prisma) into AppErrors so they
- * get a correct status code and the standard response shape instead of a 500.
- */
+/** Translates library errors (Neon, Hono, network) into AppErrors with a proper status code. */
 function normalizeError(err: Error): Error {
   if (err instanceof AppError) return err;
 
-  if (isBodyParserError(err)) {
-    switch (err.type) {
-      case 'entity.parse.failed':
-        return new ValidationError('Request body is not valid JSON');
-      case 'entity.too.large':
-        return new PayloadTooLargeError('Request body is too large');
-      case 'encoding.unsupported':
-      case 'charset.unsupported':
-        return new ValidationError('Unsupported request body encoding');
-      default:
-        break;
-    }
+  if (err instanceof HTTPException) {
+    if (err.status === 413) return new PayloadTooLargeError('Request body is too large');
+    // hono/csrf rejects cross-site form posts to the auth routes
+    if (err.status === 403) return new ForbiddenError('Cross-site requests are not allowed');
+    if (err.status >= 400 && err.status < 500)
+      return new ValidationError(err.message || 'Bad request');
   }
 
-  if (err instanceof MulterError) {
-    switch (err.code) {
-      case 'LIMIT_FILE_SIZE':
-        return new FileSizeError(
-          `File exceeds the maximum allowed size of ${env.MAX_FILE_SIZE_MB} MB`,
-        );
-      case 'LIMIT_FILE_COUNT':
-        return new ValidationError('Only one file can be uploaded at a time');
-      case 'LIMIT_UNEXPECTED_FILE':
-        return new ValidationError(
-          `Unexpected file field "${err.field ?? ''}". Upload the file in the "file" field`,
-        );
-      default:
-        return new ValidationError(err.message);
+  if (isNeonDbError(err)) {
+    if (err.code === PG_UNIQUE_VIOLATION)
+      return new ConflictError('A record with this value already exists');
+    if (err.code === PG_FOREIGN_KEY_VIOLATION)
+      return new ValidationError('A referenced record does not exist');
+    if (err.code?.startsWith(PG_DATA_EXCEPTION_CLASS)) {
+      // Client-supplied values Postgres cannot store or compare (defence in depth behind Zod)
+      return new ValidationError('The request contains a value that is out of range or invalid');
     }
-  }
-
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
-    switch (err.code) {
-      case 'P2002':
-        return new ConflictError('A record with this value already exists');
-      case 'P2025':
-        return new NotFoundError('Resource not found');
-      case 'P2003':
-        return new ValidationError('A referenced record does not exist');
-      default:
-        return err;
+    if (!err.code) {
+      // No SQLSTATE: the database could not be reached (network / Neon compute unavailable)
+      return new ServiceUnavailableError(
+        'The database is currently unavailable. Please try again shortly.',
+      );
     }
-  }
-
-  if (err instanceof Prisma.PrismaClientInitializationError) {
-    return new ServiceUnavailableError(
-      'The database is currently unavailable. Please try again shortly.',
-    );
   }
 
   return err;
 }
 
-export function errorHandler(rawErr: Error, req: Request, res: Response, next: NextFunction): void {
-  // If headers were already sent (e.g. mid-stream download), delegate to Express to close the connection
-  if (res.headersSent) {
-    next(rawErr);
-    return;
-  }
+function problemResponse(c: Context<AppEnv>, problem: ApiErrorResponse) {
+  return c.json(problem, problem.status as ContentfulStatusCode);
+}
 
-  const requestId = req.requestId;
+export const errorHandler: ErrorHandler<AppEnv> = (rawErr, c) => {
+  const requestId = c.get('requestId');
+  const log = c.get('deps')?.log ?? rootLogger.child({ requestId });
+  const instance = new URL(c.req.url).pathname + new URL(c.req.url).search;
 
   if (rawErr instanceof ZodError) {
     const errors: ApiFieldError[] = rawErr.errors.map((issue) => ({
@@ -123,94 +86,80 @@ export function errorHandler(rawErr: Error, req: Request, res: Response, next: N
       message: issue.message,
       code: issue.code,
     }));
-
-    logger.warn({
-      module: 'error-handler',
-      message: 'Validation error',
-      requestId,
-      method: req.method,
-      path: req.path,
-      errors,
-    });
-
-    const problem: ApiErrorResponse = {
+    log.warn({ module: 'error-handler', message: 'Validation error', path: c.req.path, errors });
+    return problemResponse(c, {
       type: `${PROBLEM_BASE}/validation-error`,
       title: 'Validation Error',
       status: 400,
       detail: summarizeIssues(errors),
-      instance: req.originalUrl,
+      instance,
       code: 'VALIDATION_ERROR',
       requestId,
       errors,
-    };
+    });
+  }
 
-    res.status(400).json(problem);
-    return;
+  if (rawErr instanceof ConfigError) {
+    log.error({ module: 'error-handler', message: rawErr.message });
+    return problemResponse(c, {
+      type: `${PROBLEM_BASE}/service-unavailable`,
+      title: 'Service Unavailable',
+      status: 503,
+      detail: 'The service is not configured correctly. Please try again later.',
+      instance,
+      code: 'SERVICE_UNAVAILABLE',
+      requestId,
+    });
   }
 
   const err = normalizeError(rawErr);
 
   if (err instanceof AppError) {
     const isServerError = err.statusCode >= 500;
-
-    logger[isServerError ? 'error' : 'warn']({
+    log[isServerError ? 'error' : 'warn']({
       module: 'error-handler',
       message: err.message,
-      requestId,
-      method: req.method,
-      path: req.path,
+      method: c.req.method,
+      path: c.req.path,
       statusCode: err.statusCode,
       code: err.code,
       cause: err !== rawErr ? { name: rawErr.name, message: rawErr.message } : undefined,
-      stack: isServerError ? (err === rawErr ? err.stack : rawErr.stack) : undefined,
+      stack: isServerError ? rawErr.stack : undefined,
     });
-
     const problem: ApiErrorResponse = {
       type: `${PROBLEM_BASE}/${err.code.toLowerCase().replace(/_/g, '-')}`,
       title: titleFromCode(err.code),
       status: err.statusCode,
       detail: err.message,
-      instance: req.originalUrl,
+      instance,
       code: err.code,
       requestId,
     };
-
     if (err instanceof ValidationError && err.details) {
       problem.errors = err.details as unknown as ApiFieldError[];
     }
-
-    res.status(err.statusCode).json(problem);
-    return;
+    if (err.retryAfterSeconds !== undefined) c.header('Retry-After', String(err.retryAfterSeconds));
+    return problemResponse(c, problem);
   }
 
-  // Unexpected errors
-  logger.error({
+  log.error({
     module: 'error-handler',
     message: 'Unhandled error',
-    requestId,
-    method: req.method,
-    path: req.path,
-    error: {
-      name: err.name,
-      message: err.message,
-      stack: err.stack,
-    },
+    method: c.req.method,
+    path: c.req.path,
+    error: { name: err.name, message: err.message, stack: err.stack },
   });
-
-  const problem: ApiErrorResponse = {
+  return problemResponse(c, {
     type: `${PROBLEM_BASE}/internal-error`,
     title: 'Internal Server Error',
     status: 500,
     detail: 'An unexpected error occurred. Please try again later.',
-    instance: req.originalUrl,
+    instance,
     code: 'INTERNAL_ERROR',
     requestId,
-  };
+  });
+};
 
-  res.status(500).json(problem);
-}
-
-/** Catch-all for unknown routes so clients always receive the standard JSON error shape. */
-export function notFoundHandler(req: Request, _res: Response, next: NextFunction): void {
-  next(new NotFoundError(`No route matches ${req.method} ${req.path}`));
-}
+/** Unknown API routes get the standard JSON error shape. */
+export const notFoundHandler: NotFoundHandler<AppEnv> = (c) =>
+  errorHandler(new NotFoundError(`No route matches ${c.req.method} ${c.req.path}`), c);

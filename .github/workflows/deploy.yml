@@ -1,0 +1,65 @@
+name: Deploy
+
+# Deploys main to Cloudflare: runs database migrations against Neon, then publishes the Worker
+# (API + web app). Required repository secrets:
+#   CLOUDFLARE_API_TOKEN   token with "Edit Cloudflare Workers" permissions
+#   CLOUDFLARE_ACCOUNT_ID  your Cloudflare account ID
+#   NEON_DATABASE_URL      Neon *direct* (non-pooler) connection string, used for migrations
+# The Worker's own secrets (DATABASE_URL, JWT_SECRET) are set once with `wrangler secret put`.
+#
+# Pushes to main deploy only once the repository variable DEPLOY_ENABLED is set to "true"
+# (Settings → Secrets and variables → Actions → Variables), so the job stays inert until the
+# secrets exist. Manual runs (workflow_dispatch) always deploy.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Check deployment secrets
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$NEON_DATABASE_URL" ] || missing="$missing NEON_DATABASE_URL"
+          if [ -n "$missing" ]; then echo "::error::Missing repository secrets:$missing"; exit 1; fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - name: Migrate database (Neon)
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      - name: Build web app
+        run: pnpm --filter @lexterrae/web build
+
+      - name: Deploy Worker
+        working-directory: apps/api
+        run: pnpm exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

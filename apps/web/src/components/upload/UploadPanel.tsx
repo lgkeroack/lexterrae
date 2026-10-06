@@ -357,7 +357,7 @@ export function UploadPanel() {
     formData.append('file', file);
     formData.append('title', title.trim());
     if (description.trim()) formData.append('description', description.trim());
-    // multer turns `name[]` fields into arrays, matching the API's zod schema.
+    // The API collects repeated `name[]` fields into arrays, matching its zod schema.
     tags.forEach((t) => formData.append('tags[]', t));
     ids.forEach((id) => formData.append('jurisdictionIds[]', id));
 

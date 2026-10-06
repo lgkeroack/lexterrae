@@ -1,9 +1,11 @@
-import { PrismaClient } from '@prisma/client';
-import Redis from 'ioredis';
+/**
+ * Seeds the Canadian jurisdiction hierarchy (idempotent: safe to re-run).
+ *
+ * Usage: pnpm --filter @lexterrae/api db:seed
+ */
+import { sql } from './connect.js';
 
-const prisma = new PrismaClient();
-
-async function upsertJurisdiction(data: {
+interface JurisdictionInput {
   name: string;
   code: string;
   level: string;
@@ -11,27 +13,22 @@ async function upsertJurisdiction(data: {
   legalSystem: string;
   geoCode?: string | null;
   population?: number | null;
-}) {
-  return prisma.jurisdiction.upsert({
-    where: { code: data.code },
-    update: {
-      name: data.name,
-      level: data.level,
-      parentId: data.parentId ?? null,
-      legalSystem: data.legalSystem,
-      geoCode: data.geoCode ?? null,
-      population: data.population ?? null,
-    },
-    create: {
-      name: data.name,
-      code: data.code,
-      level: data.level,
-      parentId: data.parentId ?? null,
-      legalSystem: data.legalSystem,
-      geoCode: data.geoCode ?? null,
-      population: data.population ?? null,
-    },
-  });
+}
+
+async function upsertJurisdiction(data: JurisdictionInput) {
+  const [row] = await sql`
+    INSERT INTO jurisdictions (name, code, level, parent_id, legal_system, geo_code, population)
+    VALUES (${data.name}, ${data.code}, ${data.level}, ${data.parentId ?? null},
+            ${data.legalSystem}, ${data.geoCode ?? null}, ${data.population ?? null})
+    ON CONFLICT (code) DO UPDATE SET
+      name = EXCLUDED.name,
+      level = EXCLUDED.level,
+      parent_id = EXCLUDED.parent_id,
+      legal_system = EXCLUDED.legal_system,
+      geo_code = EXCLUDED.geo_code,
+      population = EXCLUDED.population
+    RETURNING id, name, code`;
+  return row as { id: string; name: string; code: string };
 }
 
 /**
@@ -49,12 +46,7 @@ function municipalityCode(provinceCode: string, cityName: string): string {
   return `${provinceCode}-${slug}`;
 }
 
-/** Code format produced by earlier versions of this seed (kept so re-seeding renames instead of duplicating). */
-function legacyMunicipalityCode(provinceCode: string, cityName: string): string {
-  return `${provinceCode}-${cityName.toUpperCase().replace(/\s+/g, '_').replace(/['']/g, '_')}`;
-}
-
-export async function main() {
+async function main() {
   console.log('Seeding Canadian jurisdictions...');
 
   // ─── Federal ──────────────────────────────────────────────────────────────────
@@ -237,10 +229,6 @@ export async function main() {
     // Upsert each municipality within this province / territory
     for (const cityName of pt.municipalities) {
       const code = municipalityCode(pt.code, cityName);
-      const legacyCode = legacyMunicipalityCode(pt.code, cityName);
-      if (legacyCode !== code) {
-        await prisma.jurisdiction.updateMany({ where: { code: legacyCode }, data: { code } });
-      }
       const municipality = await upsertJurisdiction({
         name: cityName,
         code,
@@ -253,34 +241,13 @@ export async function main() {
   }
 
   // ─── Summary ──────────────────────────────────────────────────────────────────
-  const totalCount = await prisma.jurisdiction.count();
-  console.log(`\nSeeding complete. Total jurisdictions: ${totalCount}`);
-
-  // Invalidate the cached jurisdiction tree so the API serves fresh data (best effort).
-  const redis = new Redis(process.env['REDIS_URL'] ?? 'redis://localhost:6379', {
-    lazyConnect: true,
-    maxRetriesPerRequest: 1,
-    retryStrategy: () => null,
-  });
-  try {
-    await redis.connect();
-    await redis.del('jurisdictions:tree');
-    console.log('Cleared cached jurisdiction tree.');
-  } catch {
-    console.warn(
-      'Could not clear jurisdiction tree cache (Redis unavailable); it expires within 24h.',
-    );
-  } finally {
-    redis.disconnect();
-  }
+  const [{ count }] = (await sql`SELECT count(*)::int AS count FROM jurisdictions`) as [
+    { count: number },
+  ];
+  console.log(`\nSeeding complete. Total jurisdictions: ${count}`);
 }
 
-main()
-  .then(async () => {
-    await prisma.$disconnect();
-  })
-  .catch(async (e) => {
-    console.error(e);
-    await prisma.$disconnect();
-    process.exit(1);
-  });
+main().catch((e: unknown) => {
+  console.error(e);
+  process.exit(1);
+});

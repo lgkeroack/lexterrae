@@ -1,188 +1,130 @@
-import {
-  Router,
-  type Request,
-  type Response,
-  type NextFunction,
-  type CookieOptions,
-} from 'express';
-import jwt from 'jsonwebtoken';
-import { env } from '../config/env.js';
-import { authService } from '../services/auth.service.js';
-import { auditService } from '../services/audit.service.js';
-import { authenticate } from '../middleware/auth.js';
-import { validate } from '../middleware/validate.js';
+import { Hono, type Context } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import { csrf } from 'hono/csrf';
+import type { CookieOptions } from 'hono/utils/cookie';
+import { isLocalEnvironment } from '../env.js';
 import { AuthenticationError } from '../lib/errors.js';
-import { loginLimiter, refreshLimiter, registerLimiter } from '../lib/rate-limit.js';
+import { authenticate } from '../middleware/auth.js';
+import { loginLimiter, refreshLimiter, registerLimiter } from '../middleware/rate-limit.js';
+import { validJson } from '../middleware/validate.js';
+import { audit } from '../services/audit.service.js';
+import * as authService from '../services/auth.service.js';
+import type { AppEnv } from '../types.js';
 import {
-  registerSchema,
   loginSchema,
-  refreshTokenSchema,
   logoutSchema,
+  refreshTokenSchema,
+  registerSchema,
 } from '../validators/auth.validator.js';
 
-const router: ReturnType<typeof Router> = Router();
+const auth = new Hono<AppEnv>();
+
+// SECURITY: these routes set or use the refresh cookie, so reject cross-site form posts
+// (checks Sec-Fetch-Site / Origin for form-encodable content types). Bearer-token routes
+// elsewhere are not CSRF-able and do not need this.
+auth.use('*', csrf());
 
 /**
- * The refresh token is set as an httpOnly cookie scoped to the auth routes (and also
- * returned in the body for clients that keep it themselves). Refresh/logout accept it
- * from either the cookie or the JSON body.
+ * The refresh token is set as an httpOnly cookie scoped to the auth routes (and also returned
+ * in the body for clients that keep it themselves). Refresh/logout accept either.
  */
 const REFRESH_COOKIE = 'lt_refresh';
-const refreshCookieOptions: CookieOptions = {
-  httpOnly: true,
-  // Browsers only send Secure cookies over HTTPS; local dev runs over plain http
-  secure: env.NODE_ENV !== 'development' && env.NODE_ENV !== 'test',
-  sameSite: 'strict',
-  path: '/api/auth',
-};
 
-function setRefreshCookie(res: Response, refreshToken: string): void {
-  const { exp } = (jwt.decode(refreshToken) as { exp?: number } | null) ?? {};
-  res.cookie(REFRESH_COOKIE, refreshToken, {
-    ...refreshCookieOptions,
-    ...(exp ? { expires: new Date(exp * 1000) } : {}),
+function cookieOptions(c: Context<AppEnv>): CookieOptions {
+  return {
+    httpOnly: true,
+    // Browsers only send Secure cookies over HTTPS; `wrangler dev` serves plain http
+    secure: !isLocalEnvironment(c.get('deps').config),
+    sameSite: 'Strict',
+    path: '/api/auth',
+  };
+}
+
+async function setRefreshCookie(c: Context<AppEnv>, refreshToken: string): Promise<void> {
+  const expires = await authService.refreshTokenExpiry(c.get('deps'), refreshToken);
+  setCookie(c, REFRESH_COOKIE, refreshToken, {
+    ...cookieOptions(c),
+    ...(expires ? { expires } : {}),
   });
 }
 
-function readRefreshToken(req: Request): string | undefined {
-  const fromBody = (req.body as { refreshToken?: unknown } | undefined)?.refreshToken;
-  if (typeof fromBody === 'string' && fromBody.length > 0) return fromBody;
-  const fromCookie = (req.cookies as Record<string, unknown> | undefined)?.[REFRESH_COOKIE];
-  return typeof fromCookie === 'string' && fromCookie.length > 0 ? fromCookie : undefined;
+/**
+ * The httpOnly cookie is authoritative: it is always the newest token for this browser. A token
+ * in the body is only a fallback for clients without cookies (a stale in-memory copy must never
+ * win over the cookie, or a valid session would be rejected as token reuse).
+ */
+function readRefreshToken(c: Context<AppEnv>, bodyToken: string | undefined): string | undefined {
+  const fromCookie = getCookie(c, REFRESH_COOKIE);
+  if (fromCookie) return fromCookie;
+  return bodyToken || undefined;
 }
 
-/**
- * POST /api/auth/register
- * Creates a new user account and returns tokens.
- */
-router.post(
-  '/register',
-  registerLimiter,
-  validate({ body: registerSchema }),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { email, password, displayName } = req.body;
-      const result = await authService.register(email, password, displayName);
+/** POST /api/auth/register — creates an account and signs it in. */
+auth.post('/register', registerLimiter, async (c) => {
+  const deps = c.get('deps');
+  const { email, password, displayName } = await validJson(c, registerSchema);
+  const result = await authService.register(deps, email, password, displayName);
 
-      auditService.logAction({
-        actorUserId: result.user.id,
-        actorIp: req.ip || '0.0.0.0',
-        action: 'auth.register',
-        resourceType: 'user',
-        resourceId: result.user.id,
-        requestId: req.requestId,
-        outcome: 'success',
-      });
+  audit(deps, {
+    actorUserId: result.user.id,
+    action: 'auth.register',
+    resourceType: 'user',
+    resourceId: result.user.id,
+    outcome: 'success',
+  });
 
-      setRefreshCookie(res, result.refreshToken);
-      res.status(201).json({
-        user: result.user,
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
+  await setRefreshCookie(c, result.refreshToken);
+  return c.json(result, 201);
+});
 
-/**
- * POST /api/auth/login
- * Authenticates a user and returns tokens.
- */
-router.post(
-  '/login',
-  loginLimiter,
-  validate({ body: loginSchema }),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const { email, password } = req.body;
-      const result = await authService.login(email, password);
+/** POST /api/auth/login */
+auth.post('/login', loginLimiter, async (c) => {
+  const deps = c.get('deps');
+  const { email, password } = await validJson(c, loginSchema);
+  const result = await authService.login(deps, email, password);
 
-      auditService.logAction({
-        actorUserId: result.user.id,
-        actorIp: req.ip || '0.0.0.0',
-        action: 'auth.login',
-        resourceType: 'user',
-        resourceId: result.user.id,
-        requestId: req.requestId,
-        outcome: 'success',
-      });
+  audit(deps, {
+    actorUserId: result.user.id,
+    action: 'auth.login',
+    resourceType: 'user',
+    resourceId: result.user.id,
+    outcome: 'success',
+  });
 
-      setRefreshCookie(res, result.refreshToken);
-      res.status(200).json({
-        user: result.user,
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
-      });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
+  await setRefreshCookie(c, result.refreshToken);
+  return c.json(result, 200);
+});
 
-/**
- * POST /api/auth/refresh
- * Rotates tokens using a valid refresh token (from the httpOnly cookie or the JSON body).
- */
-router.post(
-  '/refresh',
-  refreshLimiter,
-  validate({ body: refreshTokenSchema }),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const refreshToken = readRefreshToken(req);
-      if (!refreshToken) {
-        throw new AuthenticationError('No active session. Please sign in.');
-      }
-      const tokens = await authService.refreshToken(refreshToken);
-
-      setRefreshCookie(res, tokens.refreshToken);
-      res.status(200).json({
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-      });
-    } catch (err) {
-      // A rejected refresh token should not keep being re-sent by the browser
-      if (err instanceof AuthenticationError) {
-        res.clearCookie(REFRESH_COOKIE, refreshCookieOptions);
-      }
-      next(err);
-    }
-  },
-);
-
-/**
- * POST /api/auth/logout
- * Revokes the refresh token (cookie or body) and clears the cookie. Always succeeds.
- */
-router.post(
-  '/logout',
-  refreshLimiter,
-  validate({ body: logoutSchema }),
-  async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      await authService.logout(readRefreshToken(req));
-
-      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions);
-      res.status(200).json({ message: 'Logged out successfully' });
-    } catch (err) {
-      next(err);
-    }
-  },
-);
-
-/**
- * GET /api/auth/me
- * Returns the authenticated user's profile (used to restore the session on page load).
- */
-router.get('/me', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+/** POST /api/auth/refresh — rotates tokens using the refresh cookie (or body). */
+auth.post('/refresh', refreshLimiter, async (c) => {
+  const body = await validJson(c, refreshTokenSchema);
+  const refreshToken = readRefreshToken(c, body.refreshToken);
   try {
-    const user = await authService.getUserById(req.context!.userId);
-    res.status(200).json({ user });
+    if (!refreshToken) throw new AuthenticationError('No active session. Please sign in.');
+    const tokens = await authService.refresh(c.get('deps'), refreshToken);
+    await setRefreshCookie(c, tokens.refreshToken);
+    return c.json(tokens, 200);
   } catch (err) {
-    next(err);
+    // A rejected refresh token should not keep being re-sent by the browser
+    if (err instanceof AuthenticationError) deleteCookie(c, REFRESH_COOKIE, cookieOptions(c));
+    throw err;
   }
 });
 
-export default router;
+/** POST /api/auth/logout — revokes the refresh token and clears the cookie. Always succeeds. */
+auth.post('/logout', refreshLimiter, async (c) => {
+  const body = await validJson(c, logoutSchema);
+  // Revoke every token the client presented (cookie and body may differ)
+  const tokens = new Set([getCookie(c, REFRESH_COOKIE), body.refreshToken].filter(Boolean));
+  for (const token of tokens) await authService.logout(c.get('deps'), token);
+  deleteCookie(c, REFRESH_COOKIE, cookieOptions(c));
+  return c.json({ message: 'Logged out successfully' }, 200);
+});
+
+/** GET /api/auth/me — the signed-in user (restores the session on page load). */
+auth.get('/me', authenticate, async (c) => {
+  const user = await authService.getUserById(c.get('deps'), c.get('userId'));
+  return c.json({ user }, 200);
+});
+
+export default auth;

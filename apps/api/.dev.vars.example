@@ -1,0 +1,11 @@
+# Local secrets and overrides for `wrangler dev`. Copy to .dev.vars (git-ignored).
+ENVIRONMENT=development
+
+# At least 32 characters. Generate one with: openssl rand -base64 48
+JWT_SECRET=change-this-to-a-random-string-at-least-32-chars-long
+
+# Local Postgres behind the Neon proxy from docker-compose.yml (`docker compose up -d`).
+# To use a Neon development branch instead, paste its pooled connection string here and
+# remove NEON_LOCAL_PROXY.
+DATABASE_URL=postgresql://postgres:postgres@db.localtest.me:5432/lexterrae
+NEON_LOCAL_PROXY=localhost:4444

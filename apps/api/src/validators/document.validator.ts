@@ -1,8 +1,16 @@
 import { z } from 'zod';
+import {
+  MAX_DESCRIPTION_LENGTH,
+  MAX_JURISDICTIONS_PER_DOCUMENT,
+  MAX_TAG_LENGTH,
+  MAX_TAGS_PER_DOCUMENT,
+  MAX_TITLE_LENGTH,
+  PAGINATION_MAX_PAGE_SIZE,
+} from '@lexterrae/shared';
 
 /**
  * Multipart form fields always arrive as strings. Array fields may be sent as a JSON array
- * string ('["a","b"]'), a comma-separated string, repeated fields (multer gives an array),
+ * string ('["a","b"]'), a comma-separated string, repeated fields (parsed as an array),
  * or a real array (JSON bodies). Normalize all of these to string[].
  */
 function toStringArray(value: unknown): unknown {
@@ -32,8 +40,14 @@ function emptyToUndefined(value: unknown): unknown {
 const tagsSchema = z.preprocess(
   toStringArray,
   z
-    .array(z.string().trim().min(1).max(50, 'Each tag must be 50 characters or fewer'))
-    .max(20, 'Maximum 20 tags allowed')
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(MAX_TAG_LENGTH, `Each tag must be ${MAX_TAG_LENGTH} characters or fewer`),
+    )
+    .max(MAX_TAGS_PER_DOCUMENT, `Maximum ${MAX_TAGS_PER_DOCUMENT} tags allowed`)
     // de-duplicate tags case-insensitively, keeping first spelling
     .transform((tags) => {
       const seen = new Set<string>();
@@ -62,11 +76,14 @@ export const uploadDocumentSchema = z.object({
     .string()
     .trim()
     .min(1, 'Title is required')
-    .max(255, 'Title must be 255 characters or fewer'),
+    .max(MAX_TITLE_LENGTH, `Title must be ${MAX_TITLE_LENGTH} characters or fewer`),
   description: z
     .string()
     .trim()
-    .max(2000, 'Description must be 2000 characters or fewer')
+    .max(
+      MAX_DESCRIPTION_LENGTH,
+      `Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer`,
+    )
     .optional()
     .default(''),
   tags: tagsSchema.optional().default([]),
@@ -75,7 +92,10 @@ export const uploadDocumentSchema = z.object({
     z
       .array(jurisdictionRefSchema)
       .min(1, 'At least one jurisdiction is required')
-      .max(50, 'Maximum 50 jurisdictions allowed')
+      .max(
+        MAX_JURISDICTIONS_PER_DOCUMENT,
+        `Maximum ${MAX_JURISDICTIONS_PER_DOCUMENT} jurisdictions allowed`,
+      )
       .transform((ids) => [...new Set(ids)]),
   ),
 });
@@ -85,12 +105,15 @@ export const updateDocumentSchema = z.object({
     .string()
     .trim()
     .min(1, 'Title must not be empty')
-    .max(255, 'Title must be 255 characters or fewer')
+    .max(MAX_TITLE_LENGTH, `Title must be ${MAX_TITLE_LENGTH} characters or fewer`)
     .optional(),
   description: z
     .string()
     .trim()
-    .max(2000, 'Description must be 2000 characters or fewer')
+    .max(
+      MAX_DESCRIPTION_LENGTH,
+      `Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer`,
+    )
     .optional(),
   tags: tagsSchema.optional(),
 });
@@ -112,8 +135,14 @@ function endOfDayIfDateOnly(value: unknown): unknown {
 
 export const documentQuerySchema = z
   .object({
-    page: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).default(1)),
-    pageSize: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(100).default(20)),
+    page: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(1).max(100_000, 'Page must be 100000 or lower').default(1),
+    ),
+    pageSize: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(1).max(PAGINATION_MAX_PAGE_SIZE).default(20),
+    ),
     search: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
     jurisdictionLevel: z.preprocess(
       emptyToUndefined,

@@ -32,15 +32,15 @@ export interface ServiceHealth {
 }
 
 export interface HealthCheckResponse {
-  /** "unhealthy" (HTTP 503) when the database is down; "degraded" (HTTP 200) when an auxiliary service is down. */
+  /** "unhealthy" (HTTP 503) when the database is down; "degraded" (HTTP 200) when file storage is down. */
   status: 'healthy' | 'degraded' | 'unhealthy';
   version: string;
   environment: string;
-  uptime: number;
   timestamp: string;
   checks: {
+    /** Neon Postgres */
     database: ServiceHealth;
-    redis: ServiceHealth;
-    s3: ServiceHealth;
+    /** Cloudflare R2 */
+    storage: ServiceHealth;
   };
 }

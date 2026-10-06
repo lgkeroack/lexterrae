@@ -1,14 +1,14 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src",
+    "noEmit": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
     "target": "ES2022",
     "lib": ["ES2022"],
-    "types": ["node"]
+    // Workers runtime + binding types come from worker-configuration.d.ts (`wrangler types`)
+    "types": []
   },
-  "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src", "worker-configuration.d.ts"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
 }

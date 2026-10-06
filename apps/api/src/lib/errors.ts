@@ -2,12 +2,14 @@ export abstract class AppError extends Error {
   public abstract readonly statusCode: number;
   public abstract readonly code: string;
   public readonly isOperational: boolean;
+  /** Sent as a Retry-After header (seconds) when set, e.g. for rate limiting. */
+  public retryAfterSeconds?: number;
 
   constructor(message: string, isOperational = true) {
     super(message);
+    this.name = new.target.name;
     this.isOperational = isOperational;
     Object.setPrototypeOf(this, new.target.prototype);
-    Error.captureStackTrace(this, this.constructor);
   }
 }
 
@@ -76,6 +78,15 @@ export class FileTypeError extends AppError {
   }
 }
 
+export class UnsupportedMediaTypeError extends AppError {
+  public readonly statusCode = 415;
+  public readonly code = 'UNSUPPORTED_MEDIA_TYPE';
+
+  constructor(message = 'Unsupported content type') {
+    super(message);
+  }
+}
+
 export class InternalError extends AppError {
   public readonly statusCode = 500;
   public readonly code = 'INTERNAL_ERROR';
@@ -109,5 +120,15 @@ export class ServiceUnavailableError extends AppError {
 
   constructor(message = 'Service temporarily unavailable. Please try again shortly.') {
     super(message);
+  }
+}
+
+export class RateLimitError extends AppError {
+  public readonly statusCode = 429;
+  public readonly code = 'RATE_LIMIT_EXCEEDED';
+
+  constructor(message: string, retryAfterSeconds: number) {
+    super(message);
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
