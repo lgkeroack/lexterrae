@@ -17,6 +17,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useDocumentStore } from '../../stores/documentStore';
+import { useUndoStore } from '../../stores/undoStore';
 import type {
   DocumentQueryParams,
   DocumentWithJurisdictions,
@@ -283,6 +284,13 @@ export function DocumentList() {
     }
     // Refill the page from the server.
     refetch();
+    const deleted = ids.filter((id) => !failed.includes(id));
+    if (deleted.length > 0) {
+      useUndoStore.getState().push({
+        message: `Deleted ${deleted.length} document${deleted.length === 1 ? '' : 's'}`,
+        undo: () => useDocumentStore.getState().restoreDocuments(deleted),
+      });
+    }
   };
 
   const linkState = { from: `${location.pathname}${location.search}` };

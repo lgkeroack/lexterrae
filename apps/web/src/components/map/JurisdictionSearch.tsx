@@ -10,7 +10,17 @@ const MIN_QUERY = 2;
 
 /** Search every jurisdiction in Canada by name and add it to the document's selections. */
 export function JurisdictionSearch() {
-  const { selections, toggleJurisdiction } = useJurisdictionStore();
+  const { selections, toggleJurisdiction, deleteCustomJurisdiction } = useJurisdictionStore();
+  const removeCustom = async (item: JurisdictionSearchResult) => {
+    setError(null);
+    try {
+      await deleteCustomJurisdiction(item);
+      setResults((rs) => rs.filter((r) => r.id !== item.id));
+    } catch (err) {
+      setError(getErrorMessage(err, `Could not delete ${item.name}.`));
+      setStatus('error');
+    }
+  };
   const [query, setQuery] = useState('');
   const debounced = useDebounce(query.trim(), 250);
   const [results, setResults] = useState<JurisdictionSearchResult[]>([]);
@@ -97,13 +107,13 @@ export function JurisdictionSearch() {
                 const selected = selectedCodes.has(r.code);
                 const where = describePath(r);
                 return (
-                  <li key={r.id}>
+                  <li key={r.id} className="flex items-stretch">
                     <button
                       type="button"
                       onClick={() => toggleJurisdiction(r)}
                       disabled={included}
                       aria-pressed={selected || included}
-                      className="flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black disabled:cursor-not-allowed disabled:hover:bg-white"
+                      className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2 text-left hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black disabled:cursor-not-allowed disabled:hover:bg-white"
                     >
                       <span
                         className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center border ${
@@ -133,6 +143,16 @@ export function JurisdictionSearch() {
                         {JURISDICTION_LEVEL_LABELS[r.level]}
                       </span>
                     </button>
+                    {r.isCustom && (
+                      <button
+                        type="button"
+                        onClick={() => void removeCustom(r)}
+                        aria-label={`Delete ${r.name} (added by you)`}
+                        className="flex-shrink-0 border-l border-gray-200 px-3 text-xs hover:bg-black hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black"
+                      >
+                        Delete
+                      </button>
+                    )}
                   </li>
                 );
               })}

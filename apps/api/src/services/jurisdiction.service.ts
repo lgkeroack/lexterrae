@@ -30,6 +30,9 @@ export interface JurisdictionRef {
   level: string;
 }
 
+/** Codes the data build disambiguated with a StatCan number, e.g. "ON-HAMILTON-3514019". */
+const NUMBERED_CODE = /-\d{4,}$/;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const LEVEL_ORDER: Record<string, number> = {
@@ -330,6 +333,8 @@ export async function searchJurisdictions(
     (a, b) =>
       a.score - b.score ||
       (LEVEL_ORDER[a.row.level] ?? 99) - (LEVEL_ORDER[b.row.level] ?? 99) ||
+      // Of same-named places, the one with the plain code (the city) before numbered namesakes
+      Number(NUMBERED_CODE.test(a.row.code)) - Number(NUMBERED_CODE.test(b.row.code)) ||
       a.row.name.length - b.row.name.length ||
       a.row.name.localeCompare(b.row.name),
   );
@@ -423,6 +428,41 @@ export async function createJurisdiction(
     jurisdictionId: created.id,
   });
   return visible.toResult(created);
+}
+
+/**
+ * Deletes a jurisdiction the user added. Refused while any document (including ones deleted
+ * within the undo window) is tagged with it, or while other jurisdictions sit inside it.
+ */
+export async function deleteCustomJurisdiction(
+  deps: Deps,
+  userId: string,
+  id: string,
+): Promise<void> {
+  const [row] = (await deps.sql.query(
+    `SELECT name,
+       (SELECT count(*)::int FROM document_jurisdictions WHERE jurisdiction_id = j.id) AS documents,
+       (SELECT count(*)::int FROM jurisdictions c WHERE c.parent_id = j.id) AS children
+     FROM jurisdictions j WHERE j.id = $1 AND j.created_by = $2`,
+    [id, userId],
+  )) as { name: string; documents: number; children: number }[];
+  if (!row) throw new NotFoundError(`Jurisdiction with ID "${id}" not found`);
+  if (row.documents > 0) {
+    throw new ConflictError(
+      `"${row.name}" is used by ${row.documents} document${row.documents === 1 ? '' : 's'}. ` +
+        'Remove it from them first.',
+    );
+  }
+  if (row.children > 0) {
+    throw new ConflictError(`"${row.name}" has jurisdictions inside it. Delete those first.`);
+  }
+  await deps.sql.query(`DELETE FROM jurisdictions WHERE id = $1 AND created_by = $2`, [id, userId]);
+  deps.log.info({
+    module: 'jurisdictions',
+    message: 'Custom jurisdiction deleted',
+    userId,
+    jurisdictionId: id,
+  });
 }
 
 /** The jurisdiction plus all descendants (e.g. a province and everything in it). */

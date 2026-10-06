@@ -1,3 +1,4 @@
+import { SOFT_DELETE_RETENTION_DAYS } from '@lexterrae/shared';
 import type { Document } from '@lexterrae/shared';
 import { FileSizeError, NotFoundError } from '../lib/errors.js';
 import type { Deps } from '../types.js';
@@ -283,6 +284,28 @@ export async function deleteDocument(
     resourceId: documentId,
     outcome: 'success',
   });
+}
+
+/**
+ * Undoes a soft delete. Possible until the retention job purges the document (and its file).
+ */
+export async function restoreDocument(deps: Deps, documentId: string, userId: string) {
+  const cutoff = new Date(Date.now() - SOFT_DELETE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const rows = await deps.sql`
+    UPDATE documents SET deleted_at = NULL
+    WHERE id = ${documentId} AND user_id = ${userId}
+      AND deleted_at IS NOT NULL AND deleted_at > ${cutoff}
+    RETURNING id`;
+  if (rows.length === 0) throw new NotFoundError('Deleted document not found');
+
+  audit(deps, {
+    actorUserId: userId,
+    action: 'document.restore',
+    resourceType: 'document',
+    resourceId: documentId,
+    outcome: 'success',
+  });
+  return getDocument(deps, documentId, userId);
 }
 
 export async function downloadDocument(deps: Deps, documentId: string, userId: string) {

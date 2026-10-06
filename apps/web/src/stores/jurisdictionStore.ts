@@ -3,6 +3,7 @@ import type { JurisdictionLevel, JurisdictionSearchResult } from '@lexterrae/sha
 import { MAX_JURISDICTIONS_PER_DOCUMENT } from '@lexterrae/shared';
 import { api, getErrorMessage } from '../services/api';
 import { PROVINCES, FEDERAL_CODE, type ProvinceInfo } from '../data/provinces';
+import { useUndoStore } from './undoStore';
 
 /**
  * A jurisdiction picked in the UI. `id` is the jurisdiction *code* (e.g. "CA", "ON",
@@ -52,6 +53,8 @@ interface JurisdictionState {
   /** Select/deselect any jurisdiction below the provinces (regional, municipal, Indigenous). */
   toggleJurisdiction: (item: JurisdictionSearchResult) => void;
   isSelected: (code: string) => boolean;
+  /** Deletes a jurisdiction the user added; the undo notice can re-create it. */
+  deleteCustomJurisdiction: (item: JurisdictionSearchResult) => Promise<void>;
   /** Records a jurisdiction the user just added, and selects it. */
   addCustomJurisdiction: (item: JurisdictionSearchResult) => void;
   removeSelection: (id: string) => void;
@@ -262,6 +265,53 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
 
   isSelected: (code) => get().selections.some((s) => s.id === code),
 
+  deleteCustomJurisdiction: async (item) => {
+    await api.deleteJurisdiction(item.id);
+    const wasSelected = get().isSelected(item.code);
+    const forget = (code: string) =>
+      set((s) => {
+        const province = provinceOf(item)?.code;
+        const current = province ? s.contents[province] : undefined;
+        return {
+          selections: s.selections.filter((sel) => sel.id !== code),
+          contents:
+            province && current
+              ? {
+                  ...s.contents,
+                  [province]: { ...current, items: current.items.filter((i) => i.code !== code) },
+                }
+              : s.contents,
+        };
+      });
+    forget(item.code);
+    useUndoStore.getState().push({
+      message: `Deleted “${item.name}”`,
+      undo: async () => {
+        // Re-created with the same details (it gets a new ID)
+        const again = await api.createJurisdiction({
+          name: item.name,
+          level: item.level,
+          parentId: item.parentId ?? undefined,
+          subtype: item.subtype ?? undefined,
+        });
+        const province = provinceOf(again);
+        set((s) => {
+          const current = province ? s.contents[province.code] : undefined;
+          return {
+            contents:
+              province && current?.status === 'loaded'
+                ? {
+                    ...s.contents,
+                    [province.code]: { ...current, items: [...current.items, again] },
+                  }
+                : s.contents,
+            selections: wasSelected ? [...s.selections, selectionFrom(again)] : s.selections,
+          };
+        });
+      },
+    });
+  },
+
   addCustomJurisdiction: (item) => {
     const province = provinceOf(item);
     if (province) {
@@ -327,3 +377,57 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
     return { ids: [...new Set(ids)], missing };
   },
 }));
+
+// ── Undo ────────────────────────────────────────────────────────────
+// Every change to the selections can be reversed from the undo notice ("Selected Peel · Undo").
+
+const UNDOABLE_ACTIONS = [
+  'toggleFederal',
+  'toggleProvince',
+  'toggleEntireProvince',
+  'toggleJurisdiction',
+  'removeSelection',
+  'clearAll',
+] as const;
+
+/** "Selected Peel", "Removed Toronto", "Cleared 4 jurisdictions", … or null if nothing changed. */
+export function describeSelectionChange(
+  before: JurisdictionSelection[],
+  after: JurisdictionSelection[],
+): string | null {
+  const beforeIds = new Set(before.map((s) => s.id));
+  const afterIds = new Set(after.map((s) => s.id));
+  const added = after.filter((s) => !beforeIds.has(s.id));
+  const removed = before.filter((s) => !afterIds.has(s.id));
+  if (added.length === 0 && removed.length === 0) return null;
+  if (added.length === 1 && removed.length === 0) return `Selected ${added[0]!.name}`;
+  if (added.length === 0 && removed.length === 1) return `Removed ${removed[0]!.name}`;
+  if (added.length === 0) return `Cleared ${removed.length} jurisdictions`;
+  if (added.length === 1) {
+    return `Selected ${added[0]!.name} (replacing ${removed.length} inside it)`;
+  }
+  return `Changed ${added.length + removed.length} jurisdictions`;
+}
+
+{
+  const actions = useJurisdictionStore.getState();
+  const wrapped: Partial<JurisdictionState> = {};
+  for (const name of UNDOABLE_ACTIONS) {
+    const action = actions[name] as (...args: unknown[]) => void;
+    wrapped[name] = ((...args: unknown[]) => {
+      const { selections, isFederalSelected } = useJurisdictionStore.getState();
+      action(...args);
+      const message = describeSelectionChange(
+        selections,
+        useJurisdictionStore.getState().selections,
+      );
+      if (message) {
+        useUndoStore.getState().push({
+          message,
+          undo: () => useJurisdictionStore.setState({ selections, isFederalSelected }),
+        });
+      }
+    }) as never;
+  }
+  useJurisdictionStore.setState(wrapped);
+}

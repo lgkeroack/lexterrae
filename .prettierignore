@@ -5,3 +5,5 @@ pnpm-lock.yaml
 apps/api/worker-configuration.d.ts
 # Generated from Statistics Canada data (one record per line)
 apps/api/db/data/jurisdictions.json
+# Generated province maps (TopoJSON)
+apps/web/public/maps/

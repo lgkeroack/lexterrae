@@ -124,6 +124,13 @@ router.delete('/:id', async (c) => {
   return c.body(null, 204);
 });
 
+/** POST /api/documents/:id/restore — undoes a delete (until the document is purged). */
+router.post('/:id/restore', async (c) => {
+  const { id } = validParams(c, documentParamsSchema);
+  const document = await documents.restoreDocument(c.get('deps'), id, c.get('userId'));
+  return c.json({ data: document }, 200);
+});
+
 /** GET /api/documents/:id/download — streams the file from R2. */
 router.get('/:id/download', async (c) => {
   const { id } = validParams(c, documentParamsSchema);

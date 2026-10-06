@@ -6,6 +6,7 @@ export type AuditAction =
   | 'document.upload'
   | 'document.update'
   | 'document.delete'
+  | 'document.restore'
   | 'document.purge'
   | 'document.download'
   | 'document.jurisdiction_assign'

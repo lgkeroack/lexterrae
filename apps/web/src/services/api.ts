@@ -505,6 +505,11 @@ export const api = {
     return res.data;
   },
 
+  /** Deletes a jurisdiction the user added (refused while documents use it). */
+  async deleteJurisdiction(id: string): Promise<void> {
+    await request<void>(`/jurisdictions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
   /** Adds a jurisdiction that only the signed-in user can see. */
   async createJurisdiction(input: CreateJurisdictionRequest): Promise<JurisdictionSearchResult> {
     const res = await request<{ data: JurisdictionSearchResult }>('/jurisdictions', {

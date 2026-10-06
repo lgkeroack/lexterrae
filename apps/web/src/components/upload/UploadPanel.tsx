@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Upload,
   FileText,
@@ -149,8 +149,39 @@ export function UploadPanel() {
     hasLoadedProvinces,
     fetchProvinces,
     getSelectionIds,
+    setActiveProvince,
     reset: resetJurisdictions,
   } = useJurisdictionStore();
+
+  // The province being browsed lives in the URL (?province=QC), so the browser's Back button
+  // (or a phone's back gesture) returns to the map of Canada instead of leaving the page.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlProvince = searchParams.get('province');
+  useEffect(() => {
+    if (urlProvince !== activeProvince) setActiveProvince(urlProvince);
+    // Only follow URL changes here; the effect below mirrors store changes into the URL
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlProvince]);
+  const syncedOnce = useRef(false);
+  useEffect(() => {
+    // The first render reflects the URL, not a user action: nothing to write back
+    if (!syncedOnce.current) {
+      syncedOnce.current = true;
+      return;
+    }
+    if (activeProvince === urlProvince) return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (activeProvince) next.set('province', activeProvince);
+        else next.delete('province');
+        return next;
+      },
+      // Opening a province adds a history entry; closing one goes back over it
+      { replace: !activeProvince },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProvince]);
 
   const isBusy = status === 'uploading' || status === 'processing';
 
@@ -162,11 +193,14 @@ export function UploadPanel() {
   // Start each visit with a clean jurisdiction picker, and abort any in-flight upload on unmount.
   useEffect(() => {
     resetJurisdictions();
+    // …but keep a province opened from the URL (reload, or browser Forward)
+    const province = new URLSearchParams(window.location.search).get('province');
+    if (province) setActiveProvince(province);
     return () => {
       xhrRef.current?.abort();
       resetJurisdictions();
     };
-  }, [resetJurisdictions]);
+  }, [resetJurisdictions, setActiveProvince]);
 
   // A file dropped just outside the drop zone would otherwise make the browser navigate
   // away to the file and lose the form.
@@ -456,6 +490,12 @@ export function UploadPanel() {
             <Button type="button" variant="secondary" onClick={startOver}>
               Upload another document
             </Button>
+            <Link
+              to="/documents"
+              className="inline-flex items-center justify-center px-4 py-2 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+            >
+              Back to documents
+            </Link>
           </div>
         </div>
       </div>
