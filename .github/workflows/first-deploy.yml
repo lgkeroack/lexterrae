@@ -1,0 +1,207 @@
+name: First deploy (one-off setup)
+
+# One-off provisioning run for the first Cloudflare + Neon deployment, using repository secrets:
+# migrates and seeds Neon, creates the R2 bucket, deploys the Worker, sets the Worker secrets
+# (DATABASE_URL from NEON_POOLED_URL; JWT_SECRET generated once, kept on re-runs), then smoke
+# tests the live URL end to end with a throwaway account that is removed afterwards.
+# Runs on pushes to its own branch (and by hand); it is not part of the regular deploy.yml path.
+#
+# Required repository secrets:
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, NEON_DATABASE_URL (direct), NEON_POOLED_URL (pooled)
+
+on:
+  push:
+    branches: [claude/cloudflare-first-deploy]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  first-deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BUCKET: lexterrae-uploads
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Check secrets (presence only)
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$NEON_DATABASE_URL" ] || missing="$missing NEON_DATABASE_URL"
+          [ -n "$NEON_POOLED_URL" ] || missing="$missing NEON_POOLED_URL"
+          if [ -n "$missing" ]; then echo "::error::Missing repository secrets:$missing"; exit 1; fi
+          echo "All four secrets are present."
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          NEON_POOLED_URL: ${{ secrets.NEON_POOLED_URL }}
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Migrate and seed Neon
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          pnpm db:migrate | tee migrate.log
+          grep -Eq 'Database: [^ ]+\.neon\.tech' migrate.log \
+            || { echo "::error::Migration target is not a neon.tech host"; exit 1; }
+          pnpm db:seed | tee seed.log
+          grep -q 'Total jurisdictions: 93' seed.log \
+            || { echo "::error::Seed did not report 93 jurisdictions"; exit 1; }
+
+      - name: Cloudflare account checks
+        working-directory: apps/api
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler whoami
+          subdomain=$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" \
+            | jq -r '.result.subdomain // empty')
+          if [ -z "$subdomain" ]; then
+            echo "::error::No workers.dev subdomain is registered on this account. Choose one in the Cloudflare dashboard (Workers & Pages) and re-run."
+            exit 1
+          fi
+          echo "BASE_URL=https://lexterrae.$subdomain.workers.dev" >> "$GITHUB_ENV"
+          echo "workers.dev subdomain: $subdomain"
+
+      - name: Create R2 bucket
+        working-directory: apps/api
+        run: |
+          set +e -uo pipefail
+          out=$(pnpm exec wrangler r2 bucket create "$BUCKET" 2>&1); rc=$?
+          echo "$out"
+          if [ $rc -ne 0 ]; then
+            if echo "$out" | grep -qi 'already exists'; then echo "Bucket already exists."; exit 0; fi
+            if echo "$out" | grep -qiE 'enable R2|10042'; then
+              echo "::error::R2 is not enabled on this account. Enable it in the Cloudflare dashboard (R2 Object Storage) and re-run."
+            fi
+            exit $rc
+          fi
+
+      - name: Deploy Worker
+        run: |
+          set +e -uo pipefail
+          pnpm run deploy 2>&1 | tee deploy.log; rc=${PIPESTATUS[0]}
+          if [ $rc -ne 0 ] && grep -qiE 'cpu_ms|cpu limit|paid plan' deploy.log; then
+            echo "::error::Deploy rejected because of limits.cpu_ms: the account needs the Workers Paid plan."
+          fi
+          exit $rc
+
+      - name: Set Worker secrets
+        working-directory: apps/api
+        env:
+          NEON_POOLED_URL: ${{ secrets.NEON_POOLED_URL }}
+        run: |
+          set -euo pipefail
+          printf %s "$NEON_POOLED_URL" | pnpm exec wrangler secret put DATABASE_URL
+          # Generate JWT_SECRET only once: replacing it would sign out every user on a re-run
+          if pnpm exec wrangler secret list | grep -qw JWT_SECRET; then
+            echo "JWT_SECRET already set; keeping it."
+          else
+            jwt=$(openssl rand -base64 48 | tr -d '\n')
+            echo "::add-mask::$jwt"
+            printf %s "$jwt" | pnpm exec wrangler secret put JWT_SECRET
+          fi
+          echo "Worker secrets (names only):"
+          pnpm exec wrangler secret list | jq -r '.[].name' 2>/dev/null \
+            || pnpm exec wrangler secret list | grep -oE 'DATABASE_URL|JWT_SECRET' | sort -u
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          echo "Live URL: $BASE_URL"
+          # Secrets can take a few seconds to reach every edge location
+          for i in $(seq 1 12); do
+            code=$(curl -s -o health.json -w '%{http_code}' "$BASE_URL/api/health" || true)
+            [ "$code" = 200 ] && jq -e '.status == "healthy"' health.json >/dev/null && break
+            sleep 5
+          done
+          echo "Health ($code):"; jq . health.json
+          jq -e '.status == "healthy" and .checks.database.status == "healthy" and .checks.storage.status == "healthy"' health.json >/dev/null \
+            || { echo "::error::Health check is not fully healthy"; exit 1; }
+
+          # Instances started before the secrets were set can still answer for a few seconds
+          for i in $(seq 1 12); do
+            n=$(curl -fsS "$BASE_URL/api/jurisdictions/provinces" | jq '.data | length' || true)
+            [ "$n" = 13 ] && break
+            sleep 5
+          done
+          echo "Provinces/territories: $n"; [ "$n" = 13 ] || { echo "::error::Expected 13"; exit 1; }
+
+          curl -fsS "$BASE_URL/" | grep -qi '<!doctype html' || { echo "::error::GET / is not HTML"; exit 1; }
+          echo "GET / returns the HTML app."
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/documents")
+          echo "GET /api/documents without a token: $code"; [ "$code" = 401 ] || exit 1
+
+      - name: End-to-end check with a throwaway account
+        run: |
+          set -euo pipefail
+          email="smoke-$(openssl rand -hex 6)@example.com"
+          echo "TEST_EMAIL=$email" >> "$GITHUB_ENV"
+          password="Aa1!$(openssl rand -hex 12)"
+          echo "::add-mask::$password"
+          echo "Test account: $email"
+
+          jq -n --arg e "$email" --arg p "$password" '{email:$e,password:$p,displayName:"Smoke Test"}' > register.json
+          code=$(curl -s -o reg.out -w '%{http_code}' -H 'Content-Type: application/json' \
+            --data @register.json "$BASE_URL/api/auth/register")
+          echo "Register: $code"; [ "$code" = 201 ] || { jq . reg.out; exit 1; }
+          token=$(jq -r '.accessToken' reg.out); echo "::add-mask::$token"
+          refresh=$(jq -r '.refreshToken' reg.out); echo "::add-mask::$refresh"
+          auth="Authorization: Bearer $token"
+
+          printf 'Lex Terrae smoke test %s\n' "$(date -u +%FT%TZ)" > smoke.txt
+          code=$(curl -s -o up.out -w '%{http_code}' -H "$auth" \
+            -F 'file=@smoke.txt;type=text/plain' -F 'title=Smoke test' -F 'jurisdictionIds[]=ON' \
+            "$BASE_URL/api/documents")
+          echo "Upload: $code"; [ "$code" = 201 ] || { jq . up.out; exit 1; }
+          id=$(jq -r '.data.id' up.out)
+
+          n=$(curl -fsS -H "$auth" "$BASE_URL/api/documents" | jq --arg id "$id" '[.data[] | select(.id == $id)] | length')
+          echo "Listed: $n"; [ "$n" = 1 ] || exit 1
+
+          curl -fsS -H "$auth" -o downloaded.txt "$BASE_URL/api/documents/$id/download"
+          cmp smoke.txt downloaded.txt && echo "Download matches the upload."
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE -H "$auth" "$BASE_URL/api/documents/$id")
+          echo "Delete: $code"; [ "$code" = 204 ] || exit 1
+
+      - name: Remove the throwaway account and its file
+        if: always() && env.TEST_EMAIL != ''
+        working-directory: apps/api
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          keys=$(node --input-type=module -e '
+            import { neon } from "@neondatabase/serverless";
+            const sql = neon(process.env.DATABASE_URL);
+            const email = process.env.TEST_EMAIL;
+            const docs = await sql`SELECT d.file_key FROM documents d JOIN users u ON u.id = d.user_id WHERE u.email = ${email}`;
+            const del = await sql`DELETE FROM users WHERE email = ${email} RETURNING id`;
+            console.error(`Deleted ${del.length} user(s), ${docs.length} document(s)`);
+            for (const d of docs) console.log(d.file_key);
+          ')
+          for key in $keys; do
+            pnpm exec wrangler r2 object delete "$BUCKET/$key" --remote
+          done
+
+      - name: Recent Worker errors (on failure)
+        if: failure() && env.BASE_URL != ''
+        working-directory: apps/api
+        run: timeout 20 pnpm exec wrangler tail --format pretty --status error || true
