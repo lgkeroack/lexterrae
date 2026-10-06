@@ -135,7 +135,10 @@ function endOfDayIfDateOnly(value: unknown): unknown {
 
 export const documentQuerySchema = z
   .object({
-    page: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).default(1)),
+    page: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().min(1).max(100_000, 'Page must be 100000 or lower').default(1),
+    ),
     pageSize: z.preprocess(
       emptyToUndefined,
       z.coerce.number().int().min(1).max(PAGINATION_MAX_PAGE_SIZE).default(20),

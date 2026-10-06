@@ -334,13 +334,13 @@ router.post(
 
 ### 4.1 Encryption
 
-| Data State                 | Method          | Details                                                 |
-| -------------------------- | --------------- | ------------------------------------------------------- |
-| In transit                 | TLS 1.3         | Enforced via HSTS, certificate pinning in mobile apps   |
-| At rest (R2)               | AES-256         | R2 encrypts all objects at rest by default              |
-| At rest (database)         | Disk encryption | Neon encrypts data at rest                              |
-| Passwords                  | bcrypt          | Cost factor ≥ 10 (Worker CPU budget), per-password salt |
-| IP addresses in audit logs | SHA-256 hash    | Irreversible, for pattern matching only                 |
+| Data State                 | Method          | Details                                               |
+| -------------------------- | --------------- | ----------------------------------------------------- |
+| In transit                 | TLS 1.3         | Enforced via HSTS, certificate pinning in mobile apps |
+| At rest (R2)               | AES-256         | R2 encrypts all objects at rest by default            |
+| At rest (database)         | Disk encryption | Neon encrypts data at rest                            |
+| Passwords                  | bcrypt          | Cost factor ≥ 12, per-password salt                   |
+| IP addresses in audit logs | SHA-256 hash    | Irreversible, for pattern matching only               |
 
 ### 4.2 Data Isolation
 

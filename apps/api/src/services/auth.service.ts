@@ -6,10 +6,10 @@ import { signToken, verifyToken } from '../lib/tokens.js';
 import type { Deps } from '../types.js';
 
 /**
- * bcrypt cost. 10 keeps sign-in around 100–200 ms of Worker CPU (OWASP minimum); hashes with
- * other costs still verify, since the cost is stored in the hash.
+ * bcrypt cost (07-SECURITY.md: at least 12). Roughly 0.3–0.5 s of Worker CPU per hash, well
+ * within the Workers Paid CPU limit set in wrangler.jsonc.
  */
-const BCRYPT_ROUNDS = 10;
+const BCRYPT_ROUNDS = 12;
 
 // SECURITY: compared against when the email is unknown, so sign-in timing does not reveal
 // which accounts exist. Computed lazily (once per isolate) to keep startup fast.

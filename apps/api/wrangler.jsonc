@@ -7,13 +7,14 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
 
-  // The built SPA (apps/web/dist). Only /api/* reaches the Worker; every other path is a static
-  // asset, with unknown paths falling back to index.html for client-side routing.
+  // The built SPA (apps/web/dist). /api/* and /assets/* reach the Worker; every other path is a
+  // static asset, with unknown paths falling back to index.html for client-side routing.
+  // (/assets/* goes through the Worker so a missing hashed file is a 404, not the SPA HTML.)
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/assets/*"]
   },
 
   // Uploaded files. Create with: npx wrangler r2 bucket create lexterrae-uploads

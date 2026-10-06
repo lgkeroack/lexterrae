@@ -1,8 +1,14 @@
-import { Hono, type Context } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { FileSizeError, ValidationError } from '../lib/errors.js';
 import { authenticate } from '../middleware/auth.js';
 import { generalLimiter, searchLimiter, uploadLimiter } from '../middleware/rate-limit.js';
-import { validFields, validJson, validParams, validQuery } from '../middleware/validate.js';
+import {
+  readBodyLimited,
+  validFields,
+  validJson,
+  validParams,
+  validQuery,
+} from '../middleware/validate.js';
 import * as documents from '../services/document.service.js';
 import type { AppEnv } from '../types.js';
 import {
@@ -18,35 +24,53 @@ const router = new Hono<AppEnv>();
 router.use('*', authenticate, generalLimiter);
 
 /**
+ * Caps the upload size (1 MB of headroom for the other form fields). Browsers send Content-Length,
+ * which is checked without reading the body; a chunked body is read with a byte cap instead.
+ */
+const enforceUploadSize: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const { MAX_FILE_SIZE_MB } = c.get('deps').config;
+  const maxBytes = (MAX_FILE_SIZE_MB + 1) * 1024 * 1024;
+  const tooLarge = () => new FileSizeError(`File exceeds the ${MAX_FILE_SIZE_MB} MB limit`);
+  if (c.req.header('content-length') && !c.req.header('transfer-encoding')) {
+    if (Number(c.req.header('content-length')) > maxBytes) throw tooLarge();
+  } else if (c.req.raw.body) {
+    const bytes = await readBodyLimited(c, maxBytes, tooLarge);
+    c.req.raw = new Request(c.req.raw, { body: bytes });
+  }
+  await next();
+};
+
+/**
  * POST /api/documents (alias: /api/documents/upload)
  * Multipart form: file, title, description, tags[] / tags, jurisdictionIds[] / jurisdictionIds.
  */
-router.post('/', uploadLimiter, async (c) => upload(c));
-router.post('/upload', uploadLimiter, async (c) => upload(c));
+router.post('/', uploadLimiter, enforceUploadSize, async (c) => upload(c));
+router.post('/upload', uploadLimiter, enforceUploadSize, async (c) => upload(c));
 
 async function upload(c: Context<AppEnv>) {
   const deps = c.get('deps');
-  const maxBytes = deps.config.MAX_FILE_SIZE_MB * 1024 * 1024;
-  // Reject oversized uploads before reading the body (allow 1 MB for the other form fields)
-  if (Number(c.req.header('content-length') ?? '0') > maxBytes + 1024 * 1024) {
-    throw new FileSizeError(`File exceeds the ${deps.config.MAX_FILE_SIZE_MB} MB limit`);
-  }
   if (!c.req.header('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
     throw new ValidationError(
       'Upload must be sent as multipart/form-data with the file in the "file" field',
     );
   }
 
-  let form: Record<string, string | File | (string | File)[]>;
+  // Parse the multipart body once, directly (hono's parseBody would keep an extra copy)
+  let form: FormData;
   try {
-    form = await c.req.parseBody({ all: true });
+    form = await c.req.raw.formData();
   } catch {
     throw new ValidationError('Could not read the uploaded form data');
   }
 
-  // Normalise "tags[]" style keys; repeated fields arrive as arrays
+  // Normalise "tags[]" style keys; repeated fields become arrays
   const fields: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(form)) fields[key.replace(/\[\]$/, '')] = value;
+  for (const [rawKey, value] of form.entries()) {
+    const key = rawKey.replace(/\[\]$/, '');
+    const existing = fields[key];
+    if (existing === undefined) fields[key] = rawKey.endsWith('[]') ? [value] : value;
+    else fields[key] = Array.isArray(existing) ? [...existing, value] : [existing, value];
+  }
 
   const file = fields['file'];
   if (Array.isArray(file)) throw new ValidationError('Only one file can be uploaded at a time');

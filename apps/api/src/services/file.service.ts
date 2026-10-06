@@ -1,5 +1,5 @@
 import { fileTypeFromBuffer } from 'file-type';
-import { extractText as extractPdfText, getDocumentProxy } from 'unpdf';
+import { getDocumentProxy } from 'unpdf';
 import { ALLOWED_EXTENSIONS } from '@lexterrae/shared';
 import {
   FileTypeError,
@@ -38,8 +38,19 @@ const TEXT_TYPES: Record<string, DetectedType> = {
   csv: { mimeType: 'text/csv', extension: 'csv' },
 };
 
-const PDF_EXTRACTION_TIMEOUT_MS = 20_000;
+/**
+ * Magic-byte detection only needs the start of the file. 64 KB leaves room for zip-based Office
+ * formats (docx/xlsx), whose detection reads a few entries into the archive.
+ */
+export const SNIFF_BYTES = 64 * 1024;
+
 const MAX_EXTRACTED_TEXT_CHARS = 5_000_000;
+
+// PDF text extraction runs after the upload has been stored (see extractPdfText). These caps keep
+// its memory and CPU bounded; a PDF that exceeds them is still stored, just not fully searchable.
+const PDF_EXTRACTION_MAX_BYTES = 20 * 1024 * 1024;
+const PDF_EXTRACTION_MAX_PAGES = 1000;
+const PDF_EXTRACTION_BUDGET_MS = 20_000;
 
 export interface DetectedType {
   mimeType: string;
@@ -62,16 +73,23 @@ function sanitizeExtractedText(text: string): string {
     .slice(0, MAX_EXTRACTED_TEXT_CHARS);
 }
 
-function decodeUtf8(bytes: Uint8Array): string | null {
-  if (bytes.includes(0)) return null;
+/** True if the bytes (possibly a prefix of the file) are UTF-8 text without NUL bytes. */
+function isUtf8TextPrefix(bytes: Uint8Array): boolean {
+  if (bytes.includes(0)) return false;
   try {
-    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
+    // stream: true tolerates a multi-byte character cut off at the end of a prefix
+    new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes, { stream: true });
+    return true;
   } catch {
-    return null;
+    return false;
   }
 }
 
-/** Validates a file's type by magic bytes; the filename extension must agree with the content. */
+/**
+ * Validates a file's type by magic bytes; the filename extension must agree with the content.
+ * `bytes` may be just the start of the file (SNIFF_BYTES). Text files are fully checked later
+ * by readTextFile.
+ */
 export async function validateFileType(bytes: Uint8Array, filename: string): Promise<DetectedType> {
   if (bytes.length === 0) throw new ValidationError('The uploaded file is empty');
 
@@ -104,7 +122,7 @@ export async function validateFileType(bytes: Uint8Array, filename: string): Pro
   // Text-based files have no magic bytes: require a text extension AND valid UTF-8 without NUL bytes
   const textType = TEXT_TYPES[fileExt];
   if (textType) {
-    if (decodeUtf8(bytes) === null) {
+    if (!isUtf8TextPrefix(bytes)) {
       throw new FileTypeError(`File has a .${fileExt} extension but is not valid UTF-8 text`);
     }
     return textType;
@@ -134,40 +152,80 @@ export function sanitizeFilename(filename: string): string {
 }
 
 /**
- * Extracts searchable text. Never throws: failures (encrypted, image-only or malformed files)
- * are logged and yield null.
+ * Reads a .txt/.csv upload as text, streaming so only the searchable prefix is kept in memory.
+ * The whole file must be valid UTF-8 without NUL bytes (otherwise 415).
  */
-export async function extractText(
-  deps: Deps,
-  bytes: Uint8Array,
-  extension: string,
-): Promise<string | null> {
-  if (extension === 'txt' || extension === 'csv') {
-    return sanitizeExtractedText(decodeUtf8(bytes) ?? '') || null;
-  }
-  if (extension !== 'pdf') return null;
-
-  let timer: number | undefined;
+export async function readTextFile(file: Blob, extension: string): Promise<string | null> {
+  const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: false });
+  const reader = file.stream().getReader();
+  let text = '';
   try {
-    // pdf.js takes ownership of (detaches) the buffer it is given, so pass a copy
-    const extraction = getDocumentProxy(bytes.slice()).then((pdf) =>
-      extractPdfText(pdf, { mergePages: true }),
-    );
-    const { text } = await Promise.race([
-      extraction,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error('PDF text extraction timed out')),
-          PDF_EXTRACTION_TIMEOUT_MS,
-        );
-      }),
-    ]);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value.includes(0)) throw new TypeError('NUL byte');
+      const chunk = decoder.decode(value, { stream: true });
+      if (text.length < MAX_EXTRACTED_TEXT_CHARS) text += chunk;
+    }
+    text += decoder.decode();
+  } catch {
+    await reader.cancel().catch(() => undefined);
+    throw new FileTypeError(`File has a .${extension} extension but is not valid UTF-8 text`);
+  }
+  return sanitizeExtractedText(text) || null;
+}
+
+/** Lets timers run (Workers only advance the clock across I/O or timers) and checks the budget. */
+async function yieldAndCheck(deadline: number): Promise<boolean> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  return Date.now() < deadline;
+}
+
+/**
+ * Extracts searchable text from a PDF. Never throws: failures (encrypted, image-only or
+ * malformed files) are logged and yield null.
+ *
+ * Work is bounded by file size, page count, extracted length and a time budget checked between
+ * pages. Callers run this after the document is stored, so even if a pathological file exhausts
+ * the Worker's CPU limit only its search text is lost, never the upload.
+ */
+export async function extractPdfText(deps: Deps, file: Blob): Promise<string | null> {
+  if (file.size > PDF_EXTRACTION_MAX_BYTES) {
+    deps.log.info({
+      module: 'file',
+      message: 'PDF too large for text extraction',
+      size: file.size,
+    });
+    return null;
+  }
+  const deadline = Date.now() + PDF_EXTRACTION_BUDGET_MS;
+  let pdf: Awaited<ReturnType<typeof getDocumentProxy>> | undefined;
+  try {
+    // pdf.js takes ownership of (detaches) this buffer; nothing else uses it
+    pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
+    const pages = Math.min(pdf.numPages, PDF_EXTRACTION_MAX_PAGES);
+    let text = '';
+    for (let i = 1; i <= pages && text.length < MAX_EXTRACTED_TEXT_CHARS; i++) {
+      if (!(await yieldAndCheck(deadline))) {
+        deps.log.warn({
+          module: 'file',
+          message: 'PDF text extraction stopped at time budget',
+          page: i,
+        });
+        break;
+      }
+      const content = await (await pdf.getPage(i)).getTextContent();
+      for (const item of content.items) {
+        if ('str' in item) text += item.str + (item.hasEOL ? '\n' : '');
+      }
+      text += '\n';
+    }
     return sanitizeExtractedText(text) || null;
   } catch (err) {
     deps.log.warn({ module: 'file', message: 'Failed to extract PDF text', error: err });
     return null;
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    await pdf?.loadingTask.destroy().catch(() => undefined);
   }
 }
 
@@ -196,7 +254,7 @@ function storageUnavailable(
 export async function putFile(
   deps: Deps,
   fileKey: string,
-  bytes: Uint8Array,
+  bytes: Blob | Uint8Array,
   mimeType: string,
   originalFilename: string,
 ): Promise<void> {

@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
+import { csrf } from 'hono/csrf';
 import type { CookieOptions } from 'hono/utils/cookie';
 import { isLocalEnvironment } from '../env.js';
 import { AuthenticationError } from '../lib/errors.js';
@@ -17,6 +18,11 @@ import {
 } from '../validators/auth.validator.js';
 
 const auth = new Hono<AppEnv>();
+
+// SECURITY: these routes set or use the refresh cookie, so reject cross-site form posts
+// (checks Sec-Fetch-Site / Origin for form-encodable content types). Bearer-token routes
+// elsewhere are not CSRF-able and do not need this.
+auth.use('*', csrf());
 
 /**
  * The refresh token is set as an httpOnly cookie scoped to the auth routes (and also returned
@@ -42,10 +48,15 @@ async function setRefreshCookie(c: Context<AppEnv>, refreshToken: string): Promi
   });
 }
 
+/**
+ * The httpOnly cookie is authoritative: it is always the newest token for this browser. A token
+ * in the body is only a fallback for clients without cookies (a stale in-memory copy must never
+ * win over the cookie, or a valid session would be rejected as token reuse).
+ */
 function readRefreshToken(c: Context<AppEnv>, bodyToken: string | undefined): string | undefined {
-  if (bodyToken) return bodyToken;
   const fromCookie = getCookie(c, REFRESH_COOKIE);
-  return fromCookie && fromCookie.length > 0 ? fromCookie : undefined;
+  if (fromCookie) return fromCookie;
+  return bodyToken || undefined;
 }
 
 /** POST /api/auth/register — creates an account and signs it in. */
@@ -103,7 +114,9 @@ auth.post('/refresh', refreshLimiter, async (c) => {
 /** POST /api/auth/logout — revokes the refresh token and clears the cookie. Always succeeds. */
 auth.post('/logout', refreshLimiter, async (c) => {
   const body = await validJson(c, logoutSchema);
-  await authService.logout(c.get('deps'), readRefreshToken(c, body.refreshToken));
+  // Revoke every token the client presented (cookie and body may differ)
+  const tokens = new Set([getCookie(c, REFRESH_COOKIE), body.refreshToken].filter(Boolean));
+  for (const token of tokens) await authService.logout(c.get('deps'), token);
   deleteCookie(c, REFRESH_COOKIE, cookieOptions(c));
   return c.json({ message: 'Logged out successfully' }, 200);
 });

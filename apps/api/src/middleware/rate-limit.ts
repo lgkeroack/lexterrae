@@ -49,7 +49,7 @@ function windowLimiter(options: {
   max: number;
   keyBy: 'ip' | 'user';
   detail: string;
-  /** Only count responses with status >= 400 (e.g. failed sign-ins). */
+  /** Only failed attempts (status >= 400) stay counted; successes are refunded (e.g. sign-ins). */
   countFailuresOnly?: boolean;
 }): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
@@ -82,28 +82,24 @@ function windowLimiter(options: {
       }
     };
 
+    // Every attempt reserves a slot *before* the handler runs, so a burst of concurrent requests
+    // cannot all slip under the limit.
+    const hits = await hit();
+    if (hits !== null && hits > options.max) throw new RateLimitError(options.detail, retryAfter);
+
     if (options.countFailuresOnly) {
-      let current = 0;
-      try {
-        const [row] = await sql`
-          SELECT hits FROM rate_limit_buckets WHERE key = ${key} AND window_start = ${windowStart}`;
-        current = (row as { hits: number } | undefined)?.hits ?? 0;
-      } catch (err) {
-        log.warn({
-          module: 'rate-limit',
-          message: `Rate limit counter unavailable (${options.name})`,
-          error: err,
-        });
-      }
-      if (current >= options.max) throw new RateLimitError(options.detail, retryAfter);
       await next();
-      // Errors thrown by later handlers are rendered by onError before this point
-      if (c.res.status >= 400 && c.res.status !== 429) c.get('deps').defer(hit());
+      // Errors thrown by later handlers are rendered by onError before this point. Successful
+      // attempts give their slot back (deferred: a late refund only loosens the limit).
+      if (hits !== null && c.res.status < 400) {
+        c.get('deps').defer(
+          sql`UPDATE rate_limit_buckets SET hits = GREATEST(hits - 1, 0)
+              WHERE key = ${key} AND window_start = ${windowStart}`,
+        );
+      }
       return;
     }
 
-    const hits = await hit();
-    if (hits !== null && hits > options.max) throw new RateLimitError(options.detail, retryAfter);
     c.header('RateLimit-Limit', String(options.max));
     c.header('RateLimit-Remaining', String(Math.max(0, options.max - (hits ?? 0))));
     c.header('RateLimit-Reset', String(retryAfter));

@@ -22,3 +22,5 @@ export function isNeonDbError(err: unknown): err is NeonDbError {
 /** Postgres SQLSTATE codes the API handles explicitly. */
 export const PG_UNIQUE_VIOLATION = '23505';
 export const PG_FOREIGN_KEY_VIOLATION = '23503';
+/** Class 22 (data exception): out-of-range numbers, invalid characters or text representations. */
+export const PG_DATA_EXCEPTION_CLASS = '22';

@@ -78,6 +78,15 @@ export class FileTypeError extends AppError {
   }
 }
 
+export class UnsupportedMediaTypeError extends AppError {
+  public readonly statusCode = 415;
+  public readonly code = 'UNSUPPORTED_MEDIA_TYPE';
+
+  constructor(message = 'Unsupported content type') {
+    super(message);
+  }
+}
+
 export class InternalError extends AppError {
   public readonly statusCode = 500;
   public readonly code = 'INTERNAL_ERROR';

@@ -239,7 +239,7 @@ async function doRefresh(): Promise<string> {
       syncTokensFromStorage();
       return storedAccess;
     }
-    // Only definitive auth failures end the session; 5xx/503 (e.g. Redis outage) don't.
+    // Only definitive auth failures end the session; 5xx/503 (e.g. the database is briefly unavailable) don't.
     if (response.status === 400 || response.status === 401 || response.status === 403) {
       clearTokens();
       notifyAuthFailure();
@@ -420,7 +420,7 @@ export const api = {
     if (metadata.description) {
       formData.append('description', metadata.description);
     }
-    // multer parses `field[]` into arrays, which the API's zod schema expects.
+    // The API collects repeated `field[]` entries into arrays, which its zod schema expects.
     (metadata.tags ?? []).forEach((tag) => formData.append('tags[]', tag));
     metadata.jurisdictionIds.forEach((id) => formData.append('jurisdictionIds[]', id));
 

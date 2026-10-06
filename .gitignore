@@ -17,7 +17,3 @@ coverage/
 
 # Cloudflare Wrangler local state
 .wrangler/
-
-# Generated Prisma clients (run `pnpm --filter @lexterrae/api db:generate`)
-apps/api/src/generated/
-apps/api/prisma/generated/

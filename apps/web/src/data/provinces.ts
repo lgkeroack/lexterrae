@@ -5,14 +5,14 @@ import type { ProvinceData, LegalSystem } from '@lexterrae/shared';
  *
  * The authoritative list (with database UUIDs) is loaded from GET /api/jurisdictions;
  * this list is only used to render the picker before/if that request fails.
- * Names mirror apps/api/prisma/seed.ts, and codes are derived with the same rule the
+ * Names mirror apps/api/db/seed.ts, and codes are derived with the same rule the
  * seed uses so that local codes line up with the API's `code` column.
  */
 
 /** Code of the federal jurisdiction ("Canada") in the seed data. */
 export const FEDERAL_CODE = 'CA';
 
-/** Same derivation as `municipalityCode()` in apps/api/prisma/seed.ts. */
+/** Same derivation as `municipalityCode()` in apps/api/db/seed.ts. */
 export function municipalityCode(provinceCode: string, cityName: string): string {
   const slug = cityName
     .normalize('NFD')

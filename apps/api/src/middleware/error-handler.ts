@@ -4,10 +4,16 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { ZodError } from 'zod';
 import type { ApiErrorResponse, ApiFieldError } from '@lexterrae/shared';
 import { ConfigError } from '../env.js';
-import { isNeonDbError, PG_FOREIGN_KEY_VIOLATION, PG_UNIQUE_VIOLATION } from '../lib/db.js';
+import {
+  isNeonDbError,
+  PG_DATA_EXCEPTION_CLASS,
+  PG_FOREIGN_KEY_VIOLATION,
+  PG_UNIQUE_VIOLATION,
+} from '../lib/db.js';
 import {
   AppError,
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   PayloadTooLargeError,
   ServiceUnavailableError,
@@ -37,8 +43,12 @@ function summarizeIssues(issues: ApiFieldError[]): string {
 function normalizeError(err: Error): Error {
   if (err instanceof AppError) return err;
 
-  if (err instanceof HTTPException && err.status === 413) {
-    return new PayloadTooLargeError('Request body is too large');
+  if (err instanceof HTTPException) {
+    if (err.status === 413) return new PayloadTooLargeError('Request body is too large');
+    // hono/csrf rejects cross-site form posts to the auth routes
+    if (err.status === 403) return new ForbiddenError('Cross-site requests are not allowed');
+    if (err.status >= 400 && err.status < 500)
+      return new ValidationError(err.message || 'Bad request');
   }
 
   if (isNeonDbError(err)) {
@@ -46,6 +56,10 @@ function normalizeError(err: Error): Error {
       return new ConflictError('A record with this value already exists');
     if (err.code === PG_FOREIGN_KEY_VIOLATION)
       return new ValidationError('A referenced record does not exist');
+    if (err.code?.startsWith(PG_DATA_EXCEPTION_CLASS)) {
+      // Client-supplied values Postgres cannot store or compare (defence in depth behind Zod)
+      return new ValidationError('The request contains a value that is out of range or invalid');
+    }
     if (!err.code) {
       // No SQLSTATE: the database could not be reached (network / Neon compute unavailable)
       return new ServiceUnavailableError(

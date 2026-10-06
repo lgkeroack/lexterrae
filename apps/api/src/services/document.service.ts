@@ -48,6 +48,10 @@ const SORT_COLUMNS: Record<DocumentQueryInput['sortBy'], string> = {
 /**
  * Validates the file, stores it in R2 and creates the document with its jurisdictions in a
  * single statement. If the database insert fails, the stored file is removed again.
+ *
+ * The file is never copied wholesale in memory here: its type is sniffed from the first few KB,
+ * text files are streamed, R2 receives the File itself, and PDF text extraction runs after the
+ * response (bounded, see extractPdfText) so it cannot fail or slow down the upload.
  */
 export async function uploadDocument(deps: Deps, params: UploadDocumentParams): Promise<Document> {
   const { userId, title, description, tags, file } = params;
@@ -59,18 +63,18 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
     );
   }
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
   const filename = files.sanitizeFilename(file.name);
-  const { mimeType, extension } = await files.validateFileType(bytes, filename);
+  const head = new Uint8Array(await file.slice(0, files.SNIFF_BYTES).arrayBuffer());
+  const { mimeType, extension } = await files.validateFileType(head, filename);
+  const isText = extension === 'txt' || extension === 'csv';
+  const contentText = isText ? await files.readTextFile(file, extension) : null;
 
   // Accepts UUIDs or jurisdiction codes such as "BC"
   const resolved = await jurisdictions.resolveJurisdictionRefs(deps, params.jurisdictionIds);
   const jurisdictionIds = resolved.map((j) => j.id);
 
-  const contentText = await files.extractText(deps, bytes, extension);
-
   const fileKey = files.generateFileKey(userId, extension);
-  await files.putFile(deps, fileKey, bytes, mimeType, filename);
+  await files.putFile(deps, fileKey, file, mimeType, filename);
 
   let documentId: string;
   try {
@@ -78,7 +82,7 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
       WITH doc AS (
         INSERT INTO documents (user_id, title, description, file_key, file_type, file_size_bytes,
                                original_filename, content_text, tags)
-        VALUES (${userId}, ${title}, ${description}, ${fileKey}, ${extension}, ${bytes.length},
+        VALUES (${userId}, ${title}, ${description}, ${fileKey}, ${extension}, ${file.size},
                 ${filename}, ${contentText}, ${tags})
         RETURNING id
       ), links AS (
@@ -103,12 +107,21 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
     action: 'document.upload',
     resourceType: 'document',
     resourceId: documentId,
-    changes: { title, fileType: extension, fileSizeBytes: bytes.length, jurisdictionIds },
+    changes: { title, fileType: extension, fileSizeBytes: file.size, jurisdictionIds },
     outcome: 'success',
   });
   deps.log.info({ module: 'documents', message: 'Document uploaded', userId, documentId });
 
+  if (extension === 'pdf') deps.defer(indexPdfText(deps, documentId, file));
+
   return getDocument(deps, documentId, userId, { includeContent: false });
+}
+
+/** Fills in content_text for a stored PDF (runs after the upload response; never throws). */
+async function indexPdfText(deps: Deps, documentId: string, file: Blob): Promise<void> {
+  const text = await files.extractPdfText(deps, file);
+  if (!text) return;
+  await deps.sql`UPDATE documents SET content_text = ${text} WHERE id = ${documentId}`;
 }
 
 /** A single document owned by the user (404 for missing, deleted or other users' documents). */
@@ -192,33 +205,46 @@ export async function listDocuments(deps: Deps, userId: string, query: DocumentQ
 /** Updates title, description and/or tags; audits only fields that actually changed. */
 export async function updateDocument(deps: Deps, params: UpdateDocumentParams): Promise<Document> {
   const { userId, documentId } = params;
-  const [existing] = (await deps.sql`
-    SELECT title, description, tags FROM documents
-    WHERE id = ${documentId} AND user_id = ${userId} AND deleted_at IS NULL`) as {
-    title: string;
-    description: string | null;
-    tags: string[];
+  const title = params.title ?? null;
+  const description = params.description ?? null;
+  const tags = params.tags ?? null;
+
+  // One statement: lock the live row, set only the fields the caller sent (other columns keep
+  // their value at write time, never a stale earlier read), skip the write when nothing changes,
+  // and return the previous values so the audit diff is exactly what was replaced.
+  const rows = (await deps.sql`
+    WITH old AS (
+      SELECT id, title, description, tags FROM documents
+      WHERE id = ${documentId} AND user_id = ${userId} AND deleted_at IS NULL
+      FOR UPDATE
+    )
+    UPDATE documents d SET
+      title = COALESCE(${title}::varchar, d.title),
+      description = COALESCE(${description}::text, d.description),
+      tags = COALESCE(${tags}::text[], d.tags)
+    FROM old
+    WHERE d.id = old.id
+      AND (COALESCE(${title}::varchar, d.title),
+           COALESCE(${description}::text, d.description),
+           COALESCE(${tags}::text[], d.tags)) IS DISTINCT FROM (d.title, d.description, d.tags)
+    RETURNING old.title AS "oldTitle", old.description AS "oldDescription", old.tags AS "oldTags"`) as {
+    oldTitle: string;
+    oldDescription: string | null;
+    oldTags: string[];
   }[];
-  if (!existing) throw new NotFoundError('Document not found');
 
-  const changes: Record<string, { from: unknown; to: unknown }> = {};
-  if (params.title !== undefined && params.title !== existing.title) {
-    changes['title'] = { from: existing.title, to: params.title };
-  }
-  if (params.description !== undefined && params.description !== existing.description) {
-    changes['description'] = { from: existing.description, to: params.description };
-  }
-  if (params.tags !== undefined && JSON.stringify(params.tags) !== JSON.stringify(existing.tags)) {
-    changes['tags'] = { from: existing.tags, to: params.tags };
-  }
-
-  if (Object.keys(changes).length > 0) {
-    await deps.sql`
-      UPDATE documents SET
-        title = ${params.title ?? existing.title},
-        description = ${params.description ?? existing.description},
-        tags = ${params.tags ?? existing.tags}
-      WHERE id = ${documentId} AND user_id = ${userId}`;
+  const previous = rows[0];
+  if (previous) {
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    if (title !== null && title !== previous.oldTitle) {
+      changes['title'] = { from: previous.oldTitle, to: title };
+    }
+    if (description !== null && description !== previous.oldDescription) {
+      changes['description'] = { from: previous.oldDescription, to: description };
+    }
+    if (tags !== null && JSON.stringify(tags) !== JSON.stringify(previous.oldTags)) {
+      changes['tags'] = { from: previous.oldTags, to: tags };
+    }
     audit(deps, {
       actorUserId: userId,
       action: 'document.update',
@@ -229,6 +255,8 @@ export async function updateDocument(deps: Deps, params: UpdateDocumentParams): 
     });
   }
 
+  // No row updated means either nothing changed or the document is missing/deleted/not owned;
+  // getDocument returns the current state or throws 404.
   return getDocument(deps, documentId, userId);
 }
 

@@ -56,15 +56,18 @@ limiters are simulated locally by Wrangler.
 Instead of Docker you can point `DATABASE_URL` (in both files) at a
 [Neon branch](https://neon.tech/docs/introduction/branching) and remove `NEON_LOCAL_PROXY`.
 
-| Command           | What it does                                                 |
-| ----------------- | ------------------------------------------------------------ |
-| `pnpm dev`        | Worker + web dev servers                                     |
-| `pnpm typecheck`  | TypeScript across all packages                               |
-| `pnpm test`       | Unit tests (Vitest)                                          |
-| `pnpm build`      | Build the web app and bundle the Worker (dry run, no deploy) |
-| `pnpm db:migrate` | Apply pending SQL migrations from `apps/api/db/migrations`   |
-| `pnpm db:seed`    | Seed/refresh the Canadian jurisdiction list (idempotent)     |
-| `pnpm deploy`     | Build the web app and deploy the Worker                      |
+If you ran this project's older Docker stack (Postgres 16, Redis, MinIO), remove it first with
+`docker compose down -v`; the new stack uses a fresh `pg17_data` volume.
+
+| Command           | What it does                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| `pnpm dev`        | Worker + web dev servers                                                                |
+| `pnpm typecheck`  | TypeScript across all packages                                                          |
+| `pnpm test`       | Unit tests (Vitest)                                                                     |
+| `pnpm build`      | Build the web app and bundle the Worker (dry run, no deploy)                            |
+| `pnpm db:migrate` | Apply pending SQL migrations from `apps/api/db/migrations`                              |
+| `pnpm db:seed`    | Seed/refresh the Canadian jurisdiction list (idempotent)                                |
+| `pnpm run deploy` | Build the web app and deploy the Worker (needs `run`: `pnpm deploy` is a pnpm built-in) |
 
 ## Deploying to Cloudflare + Neon
 
@@ -75,7 +78,8 @@ extraction exceed the Free plan's CPU limit) and a Neon project.
    the **pooled** one (host contains `-pooler`) for the Worker, and the **direct** one for
    migrations.
 
-2. **Database schema and seed data** (direct connection string):
+2. **Database schema and seed data** (direct connection string; it always goes to Neon, even if
+   `apps/api/.env` has local settings):
 
    ```bash
    DATABASE_URL='postgresql://…neon.tech/neondb?sslmode=require' pnpm db:migrate
@@ -92,13 +96,16 @@ extraction exceed the Free plan's CPU limit) and a Neon project.
    npx wrangler secret put JWT_SECRET     # e.g. output of: openssl rand -base64 48
    ```
 
-4. **Deploy:** `pnpm deploy` from the repository root. The app is served at
+4. **Deploy:** `pnpm run deploy` from the repository root. The app is served at
    `https://lexterrae.<your-subdomain>.workers.dev`; add a custom domain under the Worker's
    _Settings → Domains & Routes_ (or `routes` in `wrangler.jsonc`).
 
 5. **Continuous deployment** (optional): `.github/workflows/deploy.yml` migrates and deploys on
-   every push to `main`. Add these repository secrets: `CLOUDFLARE_API_TOKEN` (_Edit Cloudflare
-   Workers_ template), `CLOUDFLARE_ACCOUNT_ID`, and `NEON_DATABASE_URL` (direct connection string).
+   every push to `main` once it is switched on. Add these repository secrets:
+   `CLOUDFLARE_API_TOKEN` (_Edit Cloudflare Workers_ template), `CLOUDFLARE_ACCOUNT_ID`, and
+   `NEON_DATABASE_URL` (direct connection string). Then add the repository **variable**
+   `DEPLOY_ENABLED` = `true`. Until then pushes skip the job; you can still run it by hand from
+   the Actions tab.
 
 Check a deployment with `curl https://<your-domain>/api/health`, follow logs with
 `npx wrangler tail`, and roll back with `npx wrangler rollback`.

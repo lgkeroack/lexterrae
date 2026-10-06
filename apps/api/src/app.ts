@@ -35,6 +35,20 @@ api.onError(errorHandler);
 
 app.route('/api', api);
 
+// Fingerprinted build output (wrangler.jsonc routes /assets/* through the Worker). A missing
+// chunk — e.g. an old tab after a deploy — must be a real 404: the SPA fallback HTML would
+// otherwise be cached as that chunk's content.
+app.get('/assets/*', async (c) => {
+  const res = await c.env.ASSETS.fetch(c.req.raw);
+  const isFallback = res.headers.get('content-type')?.startsWith('text/html');
+  if (!res.ok || isFallback) {
+    return c.text('Not found', 404, { 'Cache-Control': 'no-store' });
+  }
+  const headers = new Headers(res.headers);
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  return new Response(res.body, { status: res.status, headers });
+});
+
 // Everything else is the single-page app. Normally the assets layer answers these before the
-// Worker runs (run_worker_first only covers /api/*); this is a fallback.
+// Worker runs (run_worker_first only covers /api/* and /assets/*); this is a fallback.
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));

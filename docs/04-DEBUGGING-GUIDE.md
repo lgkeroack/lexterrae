@@ -201,7 +201,7 @@ function globalErrorHandler(err: Error, req: Request, res: Response, next: NextF
 
 1. Check browser Network tab — did the request complete? Check status code and response body.
 2. Check API logs for the requestId — look for file validation, R2 upload, and DB insert steps.
-3. Verify storage: `curl /api/health` (the `storage` check) or `npx wrangler r2 object list lexterrae-uploads` (add `--local` for `wrangler dev`)
+3. Verify storage: `curl https://<your-domain>/api/health` (the `storage` check). To check one upload, take `file_key` from its `documents` row and run `npx wrangler r2 object get lexterrae-uploads/<file_key> --file /tmp/check --remote` (`--local` under `wrangler dev`), or browse the bucket in the Cloudflare dashboard (R2 → lexterrae-uploads → Objects)
 4. Check file size and type against limits in config.
 5. For partial uploads, check if the DB record was created without the R2 object (indicates rollback failure).
 6. Test with `curl` to isolate frontend vs. backend: `curl -X POST -F "file=@test.pdf" http://localhost:8787/api/documents`
