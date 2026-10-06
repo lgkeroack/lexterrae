@@ -629,9 +629,16 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
 
 function buildBreadcrumbs(doc: DocumentWithJurisdictions): string[][] {
   // Document responses carry only {id, name, code, level} (no parentId), so each
-  // jurisdiction is shown as a path from Canada, ordered federal → provincial → municipal.
-  const order: Record<string, number> = { federal: 0, provincial: 1, territorial: 1, municipal: 2 };
+  // jurisdiction is shown as a path from Canada, ordered from broadest to most local.
+  const order: Record<string, number> = {
+    federal: 0,
+    provincial: 1,
+    territorial: 1,
+    regional: 2,
+    municipal: 3,
+    indigenous: 3,
+  };
   return [...doc.jurisdictions]
-    .sort((a, b) => (order[a.level] ?? 3) - (order[b.level] ?? 3) || a.name.localeCompare(b.name))
+    .sort((a, b) => (order[a.level] ?? 4) - (order[b.level] ?? 4) || a.name.localeCompare(b.name))
     .map((j) => (j.level === 'federal' ? ['Canada'] : ['Canada', j.name]));
 }

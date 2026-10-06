@@ -70,7 +70,11 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
   const contentText = isText ? await files.readTextFile(file, extension) : null;
 
   // Accepts UUIDs or jurisdiction codes such as "BC"
-  const resolved = await jurisdictions.resolveJurisdictionRefs(deps, params.jurisdictionIds);
+  const resolved = await jurisdictions.resolveJurisdictionRefs(
+    deps,
+    params.jurisdictionIds,
+    params.userId,
+  );
   const jurisdictionIds = resolved.map((j) => j.id);
 
   const fileKey = files.generateFileKey(userId, extension);
@@ -164,7 +168,7 @@ export async function listDocuments(deps: Deps, userId: string, query: DocumentQ
     const conditions: string[] = [];
     if (query.jurisdictionId) {
       // Include sub-jurisdictions: "BC" also matches documents tagged with BC municipalities
-      const ids = await jurisdictions.getSelfAndDescendantIds(deps, query.jurisdictionId);
+      const ids = await jurisdictions.getSelfAndDescendantIds(deps, query.jurisdictionId, userId);
       conditions.push(`dj.jurisdiction_id = ANY(${param(ids)}::uuid[])`);
     }
     if (query.jurisdictionLevel) conditions.push(`j.level = ${param(query.jurisdictionLevel)}`);

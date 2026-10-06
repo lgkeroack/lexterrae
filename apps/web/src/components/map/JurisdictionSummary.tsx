@@ -7,10 +7,12 @@ import {
 } from '../../stores/jurisdictionStore';
 
 const chipColors: Record<JurisdictionSelection['level'], string> = {
-  federal: 'bg-green-100 text-green-800 border-green-200',
-  provincial: 'bg-blue-100 text-blue-800 border-blue-200',
-  territorial: 'bg-blue-100 text-blue-800 border-blue-200',
-  municipal: 'bg-gray-100 text-gray-800 border-gray-200',
+  federal: 'bg-black text-white border-black',
+  provincial: 'bg-white text-black border-black',
+  territorial: 'bg-white text-black border-black border-dashed',
+  regional: 'bg-white text-black border-gray-500',
+  municipal: 'bg-white text-gray-800 border-gray-400',
+  indigenous: 'bg-white text-black border-gray-500 border-dotted',
 };
 
 /**
@@ -47,36 +49,32 @@ function SelectionChip({
 export function JurisdictionSummary() {
   const { selections, removeSelection, clearAll } = useJurisdictionStore();
 
-  const grouped = useMemo(() => {
-    const federal: JurisdictionSelection[] = [];
-    const provincial: JurisdictionSelection[] = [];
-    const municipal: JurisdictionSelection[] = [];
-
-    selections.forEach((s) => {
-      if (s.level === 'federal') federal.push(s);
-      else if (s.level === 'provincial' || s.level === 'territorial') provincial.push(s);
-      else if (s.level === 'municipal') municipal.push(s);
-    });
-
-    return { federal, provincial, municipal };
-  }, [selections]);
-
   const totalCount = selections.length;
   const overLimit = totalCount > MAX_JURISDICTION_SELECTIONS;
 
-  const groups: {
-    title: string;
-    items: JurisdictionSelection[];
-    label: (s: JurisdictionSelection) => string;
-  }[] = [
-    { title: 'Federal', items: grouped.federal, label: (s) => s.name },
-    { title: 'Provincial / Territorial', items: grouped.provincial, label: (s) => s.name },
-    {
-      title: 'Municipal',
-      items: grouped.municipal,
-      label: (s) => (s.parentName ? `${s.name}, ${s.parentName}` : s.name),
-    },
-  ];
+  const groups = useMemo(() => {
+    const withPlace = (s: JurisdictionSelection) =>
+      s.parentName ? `${s.name}, ${s.parentName}` : s.name;
+    const defs: {
+      title: string;
+      levels: JurisdictionSelection['level'][];
+      label: (s: JurisdictionSelection) => string;
+    }[] = [
+      { title: 'Federal', levels: ['federal'], label: (s) => s.name },
+      {
+        title: 'Provincial / Territorial',
+        levels: ['provincial', 'territorial'],
+        label: (s) => s.name,
+      },
+      { title: 'Regional', levels: ['regional'], label: withPlace },
+      { title: 'Municipal', levels: ['municipal'], label: withPlace },
+      { title: 'Indigenous', levels: ['indigenous'], label: withPlace },
+    ];
+    return defs.map((d) => ({
+      ...d,
+      items: selections.filter((s) => d.levels.includes(s.level)),
+    }));
+  }, [selections]);
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-4" aria-live="polite">
@@ -108,8 +106,8 @@ export function JurisdictionSummary() {
 
       {totalCount === 0 ? (
         <p className="py-2 text-sm text-gray-500">
-          Nothing selected yet. Choose Federal, click provinces on the map, or use the list to pick
-          provinces, territories or municipalities.
+          Nothing selected yet. Choose Federal, click provinces on the map, search above, or browse
+          a province for its regions, municipalities and Indigenous lands.
         </p>
       ) : (
         <div className="space-y-3">
@@ -140,7 +138,7 @@ export function JurisdictionSummary() {
         <p className="mt-3 text-xs font-medium text-red-600">
           A document can be tagged with at most {MAX_JURISDICTION_SELECTIONS} jurisdictions. Remove{' '}
           {totalCount - MAX_JURISDICTION_SELECTIONS}, or select an entire province instead of many
-          of its municipalities.
+          of the jurisdictions in it.
         </p>
       )}
     </div>

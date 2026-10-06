@@ -1,40 +1,59 @@
 import { create } from 'zustand';
-import type { ProvinceData, MunicipalityData, JurisdictionTreeNode } from '@lexterrae/shared';
+import type { JurisdictionLevel, JurisdictionSearchResult } from '@lexterrae/shared';
 import { MAX_JURISDICTIONS_PER_DOCUMENT } from '@lexterrae/shared';
 import { api, getErrorMessage } from '../services/api';
-import { PROVINCES, FEDERAL_CODE } from '../data/provinces';
+import { PROVINCES, FEDERAL_CODE, type ProvinceInfo } from '../data/provinces';
 
 /**
  * A jurisdiction picked in the UI. `id` is the jurisdiction *code* (e.g. "CA", "ON",
- * "ON-TORONTO"); it is resolved to the API's UUID via `idByCode` when submitting.
+ * "ON-TORONTO"), which is unique and stable; `uuid` is its database ID.
  */
 export interface JurisdictionSelection {
   id: string;
+  /** Database UUID. Missing only for Canada/provinces picked before the list loaded. */
+  uuid?: string;
   name: string;
-  level: 'federal' | 'provincial' | 'territorial' | 'municipal';
+  level: JurisdictionLevel;
+  subtype?: string | null;
+  /** Province/territory code this jurisdiction is in (drives the map's "partly selected"). */
   parentCode?: string;
+  /** Where it is, for display, e.g. "Peel, Ontario". */
   parentName?: string;
+  isCustom?: boolean;
 }
 
 /** The API rejects uploads tagged with more than this many jurisdictions (shared constant). */
 export const MAX_JURISDICTION_SELECTIONS = MAX_JURISDICTIONS_PER_DOCUMENT;
 
+/** Everything inside one province/territory, loaded when the user browses it. */
+export interface ProvinceContents {
+  status: 'loading' | 'loaded' | 'error';
+  items: JurisdictionSearchResult[];
+  error?: string;
+}
+
 interface JurisdictionState {
-  provinces: ProvinceData[];
-  /** Jurisdiction code -> database UUID, populated from GET /api/jurisdictions. */
-  idByCode: Record<string, string>;
+  provinces: ProvinceInfo[];
+  federalId: string | null;
   isLoadingProvinces: boolean;
   hasLoadedProvinces: boolean;
   provincesError: string | null;
+  /** Keyed by province/territory code. */
+  contents: Record<string, ProvinceContents>;
   selections: JurisdictionSelection[];
   isFederalSelected: boolean;
   activeProvince: string | null;
   fetchProvinces: (force?: boolean) => Promise<void>;
+  loadProvinceContents: (code: string, force?: boolean) => Promise<void>;
   toggleFederal: () => void;
-  /** Select/deselect an entire province (replaces any individual municipality picks). */
+  /** Select/deselect an entire province (replaces any individual picks inside it). */
   toggleProvince: (code: string) => void;
-  toggleMunicipality: (provinceCode: string, municipality: MunicipalityData) => void;
   toggleEntireProvince: (code: string) => void;
+  /** Select/deselect any jurisdiction below the provinces (regional, municipal, Indigenous). */
+  toggleJurisdiction: (item: JurisdictionSearchResult) => void;
+  isSelected: (code: string) => boolean;
+  /** Records a jurisdiction the user just added, and selects it. */
+  addCustomJurisdiction: (item: JurisdictionSearchResult) => void;
   removeSelection: (id: string) => void;
   clearAll: () => void;
   /** Clears selections and drill-down state (e.g. after a successful upload). */
@@ -44,64 +63,51 @@ interface JurisdictionState {
   getSelectionIds: () => { ids: string[]; missing: JurisdictionSelection[] };
 }
 
-const FEDERAL_SELECTION: JurisdictionSelection = {
-  id: FEDERAL_CODE,
-  name: 'Federal (All of Canada)',
-  level: 'federal',
-};
+const PROVINCE_LEVELS = new Set<JurisdictionLevel>(['provincial', 'territorial']);
 
 function isProvinceLevel(level: string): level is 'provincial' | 'territorial' {
-  return level === 'provincial' || level === 'territorial';
+  return PROVINCE_LEVELS.has(level as JurisdictionLevel);
 }
 
-/** Converts the API's Federal -> Provincial -> Municipal tree into picker data. */
-function buildFromTree(tree: JurisdictionTreeNode[]): {
-  provinces: ProvinceData[];
-  idByCode: Record<string, string>;
-} {
-  const idByCode: Record<string, string> = {};
-  const all: JurisdictionTreeNode[] = [];
-  const walk = (nodes: JurisdictionTreeNode[]) => {
-    for (const n of nodes) {
-      all.push(n);
-      if (n.children?.length) walk(n.children);
-    }
+/** The province/territory a result sits in (its first ancestor, or itself). */
+export function provinceOf(item: JurisdictionSearchResult): { code: string; name: string } | null {
+  if (isProvinceLevel(item.level)) return { code: item.code, name: item.name };
+  const top = item.path.find((p) => isProvinceLevel(p.level));
+  return top ? { code: top.code, name: top.name } : null;
+}
+
+/** "Peel, Ontario": the ancestors, most specific first. */
+export function describePath(item: JurisdictionSearchResult): string {
+  return [...item.path]
+    .reverse()
+    .map((p) => p.name)
+    .join(', ');
+}
+
+function selectionFrom(item: JurisdictionSearchResult): JurisdictionSelection {
+  const province = provinceOf(item);
+  return {
+    id: item.code,
+    uuid: item.id,
+    name: item.name,
+    level: item.level,
+    subtype: item.subtype,
+    parentCode: province && province.code !== item.code ? province.code : undefined,
+    parentName: describePath(item) || undefined,
+    isCustom: item.isCustom,
   };
-  walk(tree);
-
-  for (const n of all) idByCode[n.code] = n.id;
-  const federal = all.find((n) => n.level === 'federal');
-  if (federal) idByCode[FEDERAL_CODE] = federal.id;
-
-  const provinces: ProvinceData[] = all
-    .filter((n) => isProvinceLevel(n.level))
-    .map((p) => ({
-      name: p.name,
-      code: p.code,
-      level: p.level as 'provincial' | 'territorial',
-      legalSystem: (p.legalSystem === 'civil_law'
-        ? 'civil_law'
-        : 'common_law') as ProvinceData['legalSystem'],
-      municipalities: (p.children ?? [])
-        .filter((c) => c.level === 'municipal')
-        .map((c) => ({ name: c.name, code: c.code }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    }))
-    .sort((a, b) =>
-      a.level === b.level ? a.name.localeCompare(b.name) : a.level === 'provincial' ? -1 : 1,
-    );
-
-  return { provinces, idByCode };
 }
 
 let inFlight: Promise<void> | null = null;
+const contentsInFlight = new Map<string, Promise<void>>();
 
 export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
   provinces: PROVINCES,
-  idByCode: {},
+  federalId: null,
   isLoadingProvinces: false,
   hasLoadedProvinces: false,
   provincesError: null,
+  contents: {},
   selections: [],
   isFederalSelected: false,
   activeProvince: null,
@@ -112,17 +118,24 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
     set({ isLoadingProvinces: true, provincesError: null });
     inFlight = (async () => {
       try {
-        const tree = await api.getJurisdictions();
-        const { provinces, idByCode } = buildFromTree(Array.isArray(tree) ? tree : []);
-        if (provinces.length === 0)
+        const top = await api.getTopLevelJurisdictions();
+        if (top.provinces.length === 0) {
           throw new Error('No jurisdictions are configured on the server.');
-        // Drop any selection that no longer exists in the authoritative data.
-        const selections = get().selections.filter((s) => idByCode[s.id]);
+        }
+        const provinces: ProvinceInfo[] = top.provinces
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            code: p.code,
+            level: p.level,
+            legalSystem: p.legalSystem,
+          }))
+          .sort((a, b) =>
+            a.level === b.level ? a.name.localeCompare(b.name) : a.level === 'provincial' ? -1 : 1,
+          );
         set({
           provinces,
-          idByCode,
-          selections,
-          isFederalSelected: selections.some((s) => s.level === 'federal'),
+          federalId: top.federal.id,
           isLoadingProvinces: false,
           hasLoadedProvinces: true,
         });
@@ -138,42 +151,71 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
     return inFlight;
   },
 
+  loadProvinceContents: async (code, force = false) => {
+    const existing = get().contents[code];
+    if (!force && (existing?.status === 'loaded' || contentsInFlight.has(code))) {
+      return contentsInFlight.get(code);
+    }
+    if (!get().hasLoadedProvinces) await get().fetchProvinces();
+    const province = get().provinces.find((p) => p.code === code);
+    if (!province?.id) {
+      set((s) => ({
+        contents: {
+          ...s.contents,
+          [code]: { status: 'error', items: [], error: 'Jurisdictions could not be loaded.' },
+        },
+      }));
+      return;
+    }
+    set((s) => ({
+      contents: { ...s.contents, [code]: { status: 'loading', items: existing?.items ?? [] } },
+    }));
+    const request = api
+      .getJurisdictionDescendants(province.id)
+      .then((items) => {
+        set((s) => ({ contents: { ...s.contents, [code]: { status: 'loaded', items } } }));
+      })
+      .catch((err: unknown) => {
+        set((s) => ({
+          contents: {
+            ...s.contents,
+            [code]: {
+              status: 'error',
+              items: [],
+              error: getErrorMessage(err, 'Could not load jurisdictions.'),
+            },
+          },
+        }));
+      })
+      .finally(() => contentsInFlight.delete(code));
+    contentsInFlight.set(code, request);
+    return request;
+  },
+
   toggleFederal: () => {
-    const { isFederalSelected, selections } = get();
+    const { isFederalSelected, selections, federalId } = get();
     if (isFederalSelected) {
       set({
         isFederalSelected: false,
         selections: selections.filter((s) => s.level !== 'federal'),
       });
     } else {
-      set({ isFederalSelected: true, selections: [FEDERAL_SELECTION, ...selections] });
-    }
-  },
-
-  toggleProvince: (code: string) => get().toggleEntireProvince(code),
-
-  toggleMunicipality: (provinceCode: string, municipality: MunicipalityData) => {
-    const { selections, provinces } = get();
-    const province = provinces.find((p) => p.code === provinceCode);
-    if (!province) return;
-    const existing = selections.find((s) => s.id === municipality.code);
-    if (existing) {
-      set({ selections: selections.filter((s) => s.id !== municipality.code) });
-    } else {
       set({
+        isFederalSelected: true,
         selections: [
-          ...selections,
           {
-            id: municipality.code,
-            name: municipality.name,
-            level: 'municipal',
-            parentCode: provinceCode,
-            parentName: province.name,
+            id: FEDERAL_CODE,
+            uuid: federalId ?? undefined,
+            name: 'Federal (All of Canada)',
+            level: 'federal',
           },
+          ...selections,
         ],
       });
     }
   },
+
+  toggleProvince: (code: string) => get().toggleEntireProvince(code),
 
   toggleEntireProvince: (code: string) => {
     const { selections, provinces } = get();
@@ -183,12 +225,63 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
     if (isProvinceSelected) {
       set({ selections: selections.filter((s) => s.id !== code && s.parentCode !== code) });
     } else {
-      // Selecting the whole province supersedes individual municipality picks.
-      const withoutMunis = selections.filter((s) => s.parentCode !== code);
+      // Selecting the whole province supersedes individual picks inside it.
+      const withoutInner = selections.filter((s) => s.parentCode !== code);
       set({
-        selections: [...withoutMunis, { id: code, name: province.name, level: province.level }],
+        selections: [
+          ...withoutInner,
+          { id: code, uuid: province.id, name: province.name, level: province.level },
+        ],
       });
     }
+  },
+
+  toggleJurisdiction: (item) => {
+    if (item.level === 'federal') {
+      get().toggleFederal();
+      return;
+    }
+    if (isProvinceLevel(item.level) && get().provinces.some((p) => p.code === item.code)) {
+      get().toggleEntireProvince(item.code);
+      return;
+    }
+    const { selections } = get();
+    if (selections.some((s) => s.id === item.code)) {
+      set({ selections: selections.filter((s) => s.id !== item.code) });
+      return;
+    }
+    const selection = selectionFrom(item);
+    // Picking something inside a fully selected province narrows it to that pick
+    set({
+      selections: [
+        ...selections.filter((s) => !(isProvinceLevel(s.level) && s.id === selection.parentCode)),
+        selection,
+      ],
+    });
+  },
+
+  isSelected: (code) => get().selections.some((s) => s.id === code),
+
+  addCustomJurisdiction: (item) => {
+    const province = provinceOf(item);
+    if (province) {
+      set((s) => {
+        const current = s.contents[province.code];
+        if (current?.status !== 'loaded') return s;
+        return {
+          contents: {
+            ...s.contents,
+            [province.code]: { ...current, items: [...current.items, item] },
+          },
+        };
+      });
+    }
+    // Already covered when its whole province is selected
+    const provinceSelected =
+      province !== null &&
+      province.code !== item.code &&
+      get().selections.some((s) => isProvinceLevel(s.level) && s.id === province.code);
+    if (!provinceSelected && !get().isSelected(item.code)) get().toggleJurisdiction(item);
   },
 
   removeSelection: (id: string) => {
@@ -200,7 +293,7 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
         selections: selections.filter((s) => s.level !== 'federal'),
       });
     } else {
-      set({ selections: selections.filter((s) => s.id !== id && s.parentCode !== id) });
+      set({ selections: selections.filter((s) => s.id !== id) });
     }
   },
 
@@ -214,14 +307,20 @@ export const useJurisdictionStore = create<JurisdictionState>((set, get) => ({
 
   setActiveProvince: (code: string | null) => {
     set({ activeProvince: code });
+    if (code) void get().loadProvinceContents(code);
   },
 
   getSelectionIds: () => {
-    const { selections, idByCode } = get();
+    const { selections, provinces, federalId } = get();
     const ids: string[] = [];
     const missing: JurisdictionSelection[] = [];
     for (const s of selections) {
-      const id = idByCode[s.id];
+      const id =
+        s.uuid ??
+        (s.level === 'federal'
+          ? federalId
+          : provinces.find((p) => p.code === s.id && isProvinceLevel(s.level))?.id) ??
+        undefined;
       if (id) ids.push(id);
       else missing.push(s);
     }

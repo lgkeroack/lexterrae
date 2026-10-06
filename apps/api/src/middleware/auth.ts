@@ -7,7 +7,21 @@ import type { AppEnv } from '../types.js';
 export const authenticate: MiddlewareHandler<AppEnv> = async (c, next) => {
   const header = c.req.header('authorization');
   if (!header) throw new AuthenticationError('Missing Authorization header');
+  await verifyBearer(header, c);
+  await next();
+};
 
+/**
+ * Sets `userId` when a bearer token is sent (public routes that also show the user's own data).
+ * A token that is sent must be valid, so an expired one still prompts the client to refresh.
+ */
+export const optionalAuthenticate: MiddlewareHandler<AppEnv> = async (c, next) => {
+  const header = c.req.header('authorization');
+  if (header) await verifyBearer(header, c);
+  await next();
+};
+
+async function verifyBearer(header: string, c: Parameters<MiddlewareHandler<AppEnv>>[0]) {
   const parts = header.trim().split(/\s+/);
   if (parts.length !== 2 || parts[0]!.toLowerCase() !== 'bearer') {
     throw new AuthenticationError('Invalid Authorization header format. Expected: Bearer <token>');
@@ -22,5 +36,4 @@ export const authenticate: MiddlewareHandler<AppEnv> = async (c, next) => {
     }
     throw new AuthenticationError('Invalid token');
   }
-  await next();
-};
+}

@@ -23,6 +23,7 @@ import type {
   FileType,
   JurisdictionLevel,
 } from '@lexterrae/shared';
+import { JURISDICTION_LEVELS, JURISDICTION_LEVEL_LABELS } from '@lexterrae/shared';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
@@ -34,7 +35,7 @@ type SortField = NonNullable<DocumentQueryParams['sortBy']>;
 type SortOrder = NonNullable<DocumentQueryParams['sortOrder']>;
 
 const SORT_FIELDS: SortField[] = ['title', 'uploaded_at', 'file_size_bytes'];
-const LEVELS: JurisdictionLevel[] = ['federal', 'provincial', 'territorial', 'municipal'];
+const LEVELS: readonly JurisdictionLevel[] = JURISDICTION_LEVELS;
 const FILE_TYPE_LABELS: Record<FileType, string> = {
   pdf: 'PDF',
   doc: 'Word (.doc)',
@@ -93,7 +94,15 @@ function JurisdictionBadges({ doc, max = 3 }: { doc: DocumentWithJurisdictions; 
     <div className="flex flex-wrap gap-1">
       {doc.jurisdictions.slice(0, max).map((j) => (
         <span key={j.id} title={j.name}>
-          <Badge label={j.code || j.name} level={j.level} />
+          {/* Short codes for Canada and the provinces ("ON"); names below that */}
+          <Badge
+            label={
+              j.level === 'federal' || j.level === 'provincial' || j.level === 'territorial'
+                ? j.code || j.name
+                : j.name
+            }
+            level={j.level}
+          />
         </span>
       ))}
       {hidden.length > 0 && (
@@ -363,10 +372,11 @@ export function DocumentList() {
             className={selectClass}
           >
             <option value="">All jurisdictions</option>
-            <option value="federal">Federal</option>
-            <option value="provincial">Provincial</option>
-            <option value="territorial">Territorial</option>
-            <option value="municipal">Municipal</option>
+            {LEVELS.map((l) => (
+              <option key={l} value={l}>
+                {JURISDICTION_LEVEL_LABELS[l]}
+              </option>
+            ))}
           </select>
           <label htmlFor="filter-type" className="sr-only">
             File type

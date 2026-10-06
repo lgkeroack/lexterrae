@@ -1,6 +1,6 @@
 name: Deploy
 
-# Deploys main to Cloudflare: runs database migrations against Neon, then publishes the Worker
+# Deploys main to Cloudflare: migrates and seeds the Neon database, then publishes the Worker
 # (API + web app). Required repository secrets:
 #   CLOUDFLARE_API_TOKEN   token with "Edit Cloudflare Workers" permissions
 #   CLOUDFLARE_ACCOUNT_ID  your Cloudflare account ID
@@ -51,6 +51,12 @@ jobs:
 
       - name: Migrate database (Neon)
         run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+
+      # Idempotent: keeps the official jurisdiction list in step with db/data/jurisdictions.json
+      - name: Seed jurisdictions (Neon)
+        run: pnpm db:seed
         env:
           DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
 
