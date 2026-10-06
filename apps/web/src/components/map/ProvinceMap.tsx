@@ -144,6 +144,11 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
     const group = select(groupRef.current);
     const behavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([1, 60])
+      // The province can't be panned out of view, so there is always something to come back to
+      .translateExtent([
+        [0, 0],
+        [WIDTH, height],
+      ])
       .clickDistance(4)
       .on('zoom', (event: { transform: { toString(): string } }) => {
         group.attr('transform', event.transform.toString());
@@ -155,7 +160,7 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
     return () => {
       svg.on('.zoom', null);
     };
-  }, [topo]);
+  }, [topo, height]);
 
   const zoomBy = (factor: number) => {
     if (svgRef.current && zoomRef.current) {

@@ -162,7 +162,13 @@ export function UploadPanel() {
     // Only follow URL changes here; the effect below mirrors store changes into the URL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlProvince]);
+  const syncedOnce = useRef(false);
   useEffect(() => {
+    // The first render reflects the URL, not a user action: nothing to write back
+    if (!syncedOnce.current) {
+      syncedOnce.current = true;
+      return;
+    }
     if (activeProvince === urlProvince) return;
     setSearchParams(
       (prev) => {
@@ -187,11 +193,14 @@ export function UploadPanel() {
   // Start each visit with a clean jurisdiction picker, and abort any in-flight upload on unmount.
   useEffect(() => {
     resetJurisdictions();
+    // …but keep a province opened from the URL (reload, or browser Forward)
+    const province = new URLSearchParams(window.location.search).get('province');
+    if (province) setActiveProvince(province);
     return () => {
       xhrRef.current?.abort();
       resetJurisdictions();
     };
-  }, [resetJurisdictions]);
+  }, [resetJurisdictions, setActiveProvince]);
 
   // A file dropped just outside the drop zone would otherwise make the browser navigate
   // away to the file and lose the form.
