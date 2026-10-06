@@ -81,7 +81,7 @@ jobs:
       - name: Create R2 bucket
         working-directory: apps/api
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           out=$(pnpm exec wrangler r2 bucket create "$BUCKET" 2>&1); rc=$?
           echo "$out"
           if [ $rc -ne 0 ]; then
@@ -94,7 +94,7 @@ jobs:
 
       - name: Deploy Worker
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           pnpm run deploy 2>&1 | tee deploy.log; rc=${PIPESTATUS[0]}
           if [ $rc -ne 0 ] && grep -qiE 'cpu_ms|cpu limit|paid plan' deploy.log; then
             echo "::error::Deploy rejected because of limits.cpu_ms: the account needs the Workers Paid plan."
