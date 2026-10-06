@@ -7,9 +7,9 @@ name: Deploy
 #   NEON_DATABASE_URL      Neon *direct* (non-pooler) connection string, used for migrations
 # The Worker's own secrets (DATABASE_URL, JWT_SECRET) are set once with `wrangler secret put`.
 #
-# Pushes to main deploy only once the repository variable DEPLOY_ENABLED is set to "true"
-# (Settings → Secrets and variables → Actions → Variables), so the job stays inert until the
-# secrets exist. Manual runs (workflow_dispatch) always deploy.
+# Pushes to main deploy only once DEPLOY_ENABLED is "true", so the job stays inert until the
+# secrets exist. It may be set as a repository or `production` environment variable (or secret);
+# the gate job runs in the environment so it can see all of them. Manual runs always deploy.
 
 on:
   push:
@@ -21,8 +21,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A job-level `if` cannot read environment variables or secrets, only repository variables
+  gate:
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          FROM_VARIABLE: ${{ vars.DEPLOY_ENABLED }}
+          FROM_SECRET: ${{ secrets.DEPLOY_ENABLED }}
+        run: |
+          enabled=false
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then enabled=true; fi
+          for value in "$FROM_VARIABLE" "$FROM_SECRET"; do
+            if [ "$(echo "$value" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" = true ]; then
+              enabled=true
+            fi
+          done
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+          echo "Deploy enabled: $enabled"
+
   deploy:
-    if: github.event_name == 'workflow_dispatch' || vars.DEPLOY_ENABLED == 'true'
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
