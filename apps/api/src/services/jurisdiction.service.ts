@@ -465,6 +465,35 @@ export async function deleteCustomJurisdiction(
   });
 }
 
+/** Levels a document inherits from a smaller jurisdiction it is tagged with. */
+const INHERITED_LEVELS = new Set(['provincial', 'territorial', 'federal']);
+
+/**
+ * The provinces/territories and Canada that a set of jurisdictions sit in, excluding the
+ * jurisdictions themselves: a document tagged with Toronto also applies in Ontario and Canada.
+ */
+export async function getInheritedIds(
+  deps: Deps,
+  ids: string[],
+  userId?: string,
+): Promise<string[]> {
+  const visible = await visibleTo(deps, userId);
+  const direct = new Set(ids);
+  const inherited = new Set<string>();
+  for (const id of ids) {
+    const seen = new Set<string>();
+    let parentId = visible.get(id)?.parentId;
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = visible.get(parentId);
+      if (!parent) break;
+      if (INHERITED_LEVELS.has(parent.level) && !direct.has(parent.id)) inherited.add(parent.id);
+      parentId = parent.parentId;
+    }
+  }
+  return [...inherited];
+}
+
 /** The jurisdiction plus all descendants (e.g. a province and everything in it). */
 export async function getSelfAndDescendantIds(
   deps: Deps,

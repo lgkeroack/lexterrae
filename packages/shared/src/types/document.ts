@@ -7,6 +7,11 @@ export interface DocumentJurisdictionSummary {
   code: string;
   level: JurisdictionLevel;
   parentId: string | null;
+  /**
+   * Implied by a smaller jurisdiction the document is tagged with (Toronto → Ontario, Canada),
+   * rather than picked directly.
+   */
+  inherited?: boolean;
 }
 
 export type FileType =

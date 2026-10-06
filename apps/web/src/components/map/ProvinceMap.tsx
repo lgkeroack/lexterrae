@@ -64,6 +64,8 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
   const [error, setError] = useState<string | null>(null);
   const [layer, setLayer] = useState<Layer>('regions');
   const [hover, setHover] = useState<{ shape: Shape; x: number; y: number } | null>(null);
+  /** Current zoom, so labels keep the same on-screen size. */
+  const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const groupRef = useRef<SVGGElement>(null);
@@ -91,8 +93,15 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
     };
   }, [provinceCode]);
 
-  const { shapes, height, paths } = useMemo(() => {
-    if (!topo) return { shapes: [] as Shape[], height: 400, paths: [] as string[] };
+  const { shapes, height, paths, labelAnchors } = useMemo(() => {
+    if (!topo) {
+      return {
+        shapes: [] as Shape[],
+        height: 400,
+        paths: [] as string[],
+        labelAnchors: new Map<string, { name: string; x: number; y: number }>(),
+      };
+    }
     const all = feature(topo, topo.objects.local) as FeatureCollection<
       Polygon | MultiPolygon,
       ShapeProps
@@ -131,10 +140,39 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
       const [tx, ty] = projection.translate();
       projection.translate([tx + 8, ty - y0 + 8]);
     }
+    // Where to label each jurisdiction (either layer): the centre of its largest piece, so an
+    // area made of islands or split parts gets one label in a sensible place
+    const regions = feature(topo, topo.objects.regions) as FeatureCollection<
+      Polygon | MultiPolygon,
+      ShapeProps
+    >;
+    const labelAnchors = new Map<string, { name: string; x: number; y: number }>();
+    for (const f of [...regions.features, ...all.features]) {
+      const code = f.properties.c;
+      if (!code || labelAnchors.has(code)) continue;
+      const parts =
+        f.geometry.type === 'Polygon'
+          ? [f.geometry.coordinates]
+          : (f.geometry.coordinates as Polygon['coordinates'][]);
+      let best: { area: number; x: number; y: number } | undefined;
+      for (const coordinates of parts) {
+        const piece = { type: 'Polygon' as const, coordinates };
+        const area = path.area(piece);
+        if (!best || area > best.area) {
+          const [x, y] = path.centroid(piece);
+          if (Number.isFinite(x) && Number.isFinite(y)) best = { area, x, y };
+        }
+      }
+      if (best) labelAnchors.set(code, { name: f.properties.n, x: best.x, y: best.y });
+    }
+    const [cx, cy] = path.centroid(all);
+    labelAnchors.set('__province__', { name: '', x: cx, y: cy });
+
     return {
       shapes: current.features,
       height: h,
       paths: current.features.map((f) => path(f) ?? ''),
+      labelAnchors,
     };
   }, [topo, layer]);
 
@@ -150,8 +188,9 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
         [WIDTH, height],
       ])
       .clickDistance(4)
-      .on('zoom', (event: { transform: { toString(): string } }) => {
+      .on('zoom', (event: { transform: { k: number; toString(): string } }) => {
         group.attr('transform', event.transform.toString());
+        setScale(event.transform.k);
         setHover(null);
       });
     zoomRef.current = behavior;
@@ -297,6 +336,34 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
                   />
                 );
               })}
+
+              {/* Names of the selected areas (or the province when all of it is selected) */}
+              <g aria-hidden="true" className="pointer-events-none select-none">
+                {(disabled
+                  ? [{ ...labelAnchors.get('__province__')!, name: provinceName, code: 'all' }]
+                  : [...selected]
+                      .map((code) => ({ ...labelAnchors.get(code), code }))
+                      .filter((a): a is { name: string; x: number; y: number; code: string } =>
+                        Boolean(a.name),
+                      )
+                ).map((a) => (
+                  <text
+                    key={a.code}
+                    x={a.x}
+                    y={a.y}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={(disabled ? 18 : 12) / scale}
+                    fontWeight={600}
+                    fill="#000000"
+                    stroke="#FFFFFF"
+                    strokeWidth={3 / scale}
+                    paintOrder="stroke"
+                  >
+                    {a.name}
+                  </text>
+                ))}
+              </g>
             </g>
           </svg>
         )}

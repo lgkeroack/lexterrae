@@ -4,6 +4,7 @@ import {
   clearJurisdictionCache,
   createJurisdiction,
   deleteCustomJurisdiction,
+  getInheritedIds,
   getDescendants,
   getSelfAndDescendantIds,
   normalizeName,
@@ -238,5 +239,19 @@ describe('deleteCustomJurisdiction', () => {
     await expect(deleteCustomJurisdiction(depsWith(undefined).deps, 'u2', 'j1')).rejects.toThrow(
       /not found/,
     );
+  });
+});
+
+describe('getInheritedIds', () => {
+  it('adds the province and Canada above a smaller jurisdiction', async () => {
+    const { deps } = fakeDeps();
+    // Mississauga sits in Peel (regional) in Ontario: regions are not inherited, Ontario and Canada are
+    expect((await getInheritedIds(deps, ['mississauga'])).sort()).toEqual(['ca', 'on']);
+  });
+
+  it('does not mark directly picked jurisdictions as inherited', async () => {
+    const { deps } = fakeDeps();
+    expect(await getInheritedIds(deps, ['mississauga', 'on'])).toEqual(['ca']);
+    expect(await getInheritedIds(deps, ['ca'])).toEqual([]);
   });
 });
