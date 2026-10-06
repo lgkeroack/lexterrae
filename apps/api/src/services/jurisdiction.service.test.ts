@@ -54,8 +54,12 @@ const official = [
   row('qc', 'Quebec', 'provincial', 'ca'),
   row('peel', 'Peel', 'regional', 'on', 'Regional municipality'),
   row('mississauga', 'Mississauga', 'municipal', 'peel', 'City'),
-  row('hamilton-city', 'Hamilton', 'municipal', 'on', 'City'),
-  row('hamilton-twp', 'Hamilton', 'municipal', 'on', 'Township'),
+  // Same name: the township (listed first, numbered code) must not outrank the city
+  {
+    ...row('hamilton-twp', 'Hamilton', 'municipal', 'on', 'Township'),
+    code: 'ON-HAMILTON-3514019',
+  },
+  { ...row('hamilton-city', 'Hamilton', 'municipal', 'on', 'City'), code: 'ON-HAMILTON' },
   row('stjerome', 'Saint-Jérôme', 'municipal', 'qc', 'City (ville)'),
   row('new-credit', 'New Credit 40A', 'indigenous', 'on', 'Indian reserve'),
 ];
@@ -118,7 +122,7 @@ describe('searchJurisdictions', () => {
       within: 'on',
       limit: 10,
     });
-    expect(towns.map((r) => r.subtype).sort()).toEqual(['City', 'Township']);
+    expect(towns.map((r) => r.subtype)).toEqual(['City', 'Township']);
     await expect(
       searchJurisdictions(deps, undefined, { q: 'hamilton', within: 'qc', limit: 10 }),
     ).resolves.toEqual([]);

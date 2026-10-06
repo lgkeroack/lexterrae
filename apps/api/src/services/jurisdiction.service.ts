@@ -30,6 +30,9 @@ export interface JurisdictionRef {
   level: string;
 }
 
+/** Codes the data build disambiguated with a StatCan number, e.g. "ON-HAMILTON-3514019". */
+const NUMBERED_CODE = /-\d{4,}$/;
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const LEVEL_ORDER: Record<string, number> = {
@@ -330,6 +333,8 @@ export async function searchJurisdictions(
     (a, b) =>
       a.score - b.score ||
       (LEVEL_ORDER[a.row.level] ?? 99) - (LEVEL_ORDER[b.row.level] ?? 99) ||
+      // Of same-named places, the one with the plain code (the city) before numbered namesakes
+      Number(NUMBERED_CODE.test(a.row.code)) - Number(NUMBERED_CODE.test(b.row.code)) ||
       a.row.name.length - b.row.name.length ||
       a.row.name.localeCompare(b.row.name),
   );
