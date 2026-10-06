@@ -31,7 +31,9 @@ function documentColumns(options: { includeContent?: boolean } = {}): string {
     ${options.includeContent ? 'd.content_text AS "contentText",' : ''}
     COALESCE((
       SELECT json_agg(json_build_object('id', j.id, 'name', j.name, 'code', j.code,
-                                        'level', j.level, 'parentId', j.parent_id) ORDER BY j.name)
+                                        'level', j.level, 'parentId', j.parent_id,
+                                        'inherited', dj.inherited)
+                      ORDER BY dj.inherited, j.name)
       FROM document_jurisdictions dj JOIN jurisdictions j ON j.id = dj.jurisdiction_id
       WHERE dj.document_id = d.id
     ), '[]'::json) AS jurisdictions,
@@ -77,6 +79,7 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
     params.userId,
   );
   const jurisdictionIds = resolved.map((j) => j.id);
+  const inheritedIds = await jurisdictions.getInheritedIds(deps, jurisdictionIds, userId);
 
   const fileKey = files.generateFileKey(userId, extension);
   await files.putFile(deps, fileKey, file, mimeType, filename);
@@ -93,6 +96,9 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
       ), links AS (
         INSERT INTO document_jurisdictions (document_id, jurisdiction_id)
         SELECT doc.id, unnest(${jurisdictionIds}::uuid[]) FROM doc
+      ), inherited_links AS (
+        INSERT INTO document_jurisdictions (document_id, jurisdiction_id, inherited)
+        SELECT doc.id, unnest(${inheritedIds}::uuid[]), true FROM doc
       )
       SELECT id FROM doc`;
     documentId = (row as { id: string }).id;

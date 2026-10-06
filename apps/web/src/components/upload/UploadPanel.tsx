@@ -12,6 +12,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useJurisdictionStore, MAX_JURISDICTION_SELECTIONS } from '../../stores/jurisdictionStore';
+import { useUndoStore } from '../../stores/undoStore';
 import { getAccessToken, refreshAccessToken } from '../../services/api';
 import { formatFileSize } from '../../utils/format';
 import { Button } from '../common/Button';
@@ -427,6 +428,8 @@ export function UploadPanel() {
       }
 
       setUploaded(doc);
+      // The picks were submitted with the document; undoing one now would only confuse
+      useUndoStore.getState().dismiss();
       setStatus('success');
       setFile(null);
       setTitle('');

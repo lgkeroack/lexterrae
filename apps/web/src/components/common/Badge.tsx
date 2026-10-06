@@ -7,6 +7,8 @@ interface BadgeProps {
   level?: JurisdictionLevel;
   onRemove?: () => void;
   className?: string;
+  /** Implied by a smaller jurisdiction rather than picked: shown dashed and muted. */
+  inherited?: boolean;
 }
 
 const levelColors: Record<JurisdictionLevel, string> = {
@@ -18,8 +20,12 @@ const levelColors: Record<JurisdictionLevel, string> = {
   indigenous: 'bg-white text-black border-gray-500 border-dotted',
 };
 
-export function Badge({ label, level, onRemove, className = '' }: BadgeProps) {
-  const colorClass = level ? levelColors[level] : 'bg-white text-black border-black';
+export function Badge({ label, level, onRemove, className = '', inherited = false }: BadgeProps) {
+  const colorClass = inherited
+    ? 'bg-white text-gray-500 border-gray-400 border-dashed'
+    : level
+      ? levelColors[level]
+      : 'bg-white text-black border-black';
 
   return (
     <span
@@ -29,6 +35,7 @@ export function Badge({ label, level, onRemove, className = '' }: BadgeProps) {
       `.trim()}
     >
       {label}
+      {inherited && <span className="sr-only"> (inherited)</span>}
       {onRemove && (
         <button
           type="button"

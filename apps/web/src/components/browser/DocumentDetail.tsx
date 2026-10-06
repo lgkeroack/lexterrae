@@ -596,7 +596,16 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
             {doc.jurisdictions.length > 0 ? (
               <div className="flex flex-wrap gap-1.5">
                 {doc.jurisdictions.map((j) => (
-                  <Badge key={j.id} label={j.name} level={j.level} />
+                  <span
+                    key={j.id}
+                    title={j.inherited ? 'Inherited from a smaller jurisdiction' : undefined}
+                  >
+                    <Badge
+                      label={j.inherited ? `${j.name} (inherited)` : j.name}
+                      level={j.level}
+                      inherited={j.inherited}
+                    />
+                  </span>
                 ))}
               </div>
             ) : (
@@ -637,8 +646,8 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
 // Helper functions
 
 function buildBreadcrumbs(doc: DocumentWithJurisdictions): string[][] {
-  // Document responses carry only {id, name, code, level} (no parentId), so each
-  // jurisdiction is shown as a path from Canada, ordered from broadest to most local.
+  // One path per jurisdiction the user picked, from Canada down, ordered from broadest to most
+  // local. Inherited provinces/Canada appear inside those paths rather than on their own.
   const order: Record<string, number> = {
     federal: 0,
     provincial: 1,
@@ -647,7 +656,15 @@ function buildBreadcrumbs(doc: DocumentWithJurisdictions): string[][] {
     municipal: 3,
     indigenous: 3,
   };
-  return [...doc.jurisdictions]
+  const byId = new Map(doc.jurisdictions.map((j) => [j.id, j]));
+  const direct = doc.jurisdictions.filter((j) => !j.inherited);
+  return [...(direct.length > 0 ? direct : doc.jurisdictions)]
     .sort((a, b) => (order[a.level] ?? 4) - (order[b.level] ?? 4) || a.name.localeCompare(b.name))
-    .map((j) => (j.level === 'federal' ? ['Canada'] : ['Canada', j.name]));
+    .map((j) => {
+      if (j.level === 'federal') return ['Canada'];
+      const parent = j.parentId ? byId.get(j.parentId) : undefined;
+      return parent && parent.level !== 'federal'
+        ? ['Canada', parent.name, j.name]
+        : ['Canada', j.name];
+    });
 }

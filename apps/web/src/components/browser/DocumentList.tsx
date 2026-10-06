@@ -94,7 +94,7 @@ function JurisdictionBadges({ doc, max = 3 }: { doc: DocumentWithJurisdictions; 
   return (
     <div className="flex flex-wrap gap-1">
       {doc.jurisdictions.slice(0, max).map((j) => (
-        <span key={j.id} title={j.name}>
+        <span key={j.id} title={j.inherited ? `${j.name} (inherited)` : j.name}>
           {/* Short codes for Canada and the provinces ("ON"); names below that */}
           <Badge
             label={
@@ -103,6 +103,7 @@ function JurisdictionBadges({ doc, max = 3 }: { doc: DocumentWithJurisdictions; 
                 : j.name
             }
             level={j.level}
+            inherited={j.inherited}
           />
         </span>
       ))}

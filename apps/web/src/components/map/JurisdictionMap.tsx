@@ -161,7 +161,7 @@ export function JurisdictionMap() {
     if (state === 'selected') return 'Entire jurisdiction selected';
     if (state === 'partial') {
       const n = municipalCountByCode.get(code) ?? 0;
-      return `${n} selected inside`;
+      return `Inherited: ${n} selected inside`;
     }
     return clickMode === 'zoom' ? 'Click to zoom in' : 'Not selected';
   };
@@ -192,7 +192,9 @@ export function JurisdictionMap() {
         <span className="text-xs text-gray-500">
           {isFederalSelected
             ? 'Federal law selected. You can also add provinces, regions, municipalities or Indigenous lands.'
-            : 'Use for federal statutes such as the Criminal Code.'}
+            : selections.length > 0
+              ? 'Federal is inherited from your selections. Select it directly for federal statutes such as the Criminal Code.'
+              : 'Use for federal statutes such as the Criminal Code.'}
         </span>
       </div>
 
@@ -357,7 +359,7 @@ export function JurisdictionMap() {
             className="h-3 w-3 rounded-sm border"
             style={{ background: COLORS.partial, borderColor: COLORS.stroke }}
           />
-          Part selected
+          Inherited (something inside selected)
         </li>
         <li className="flex items-center gap-1.5">
           <span
