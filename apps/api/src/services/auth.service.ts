@@ -27,7 +27,7 @@ interface Tokens {
   refreshToken: string;
 }
 
-async function issueTokens(deps: Deps, userId: string): Promise<Tokens> {
+export async function issueTokens(deps: Deps, userId: string): Promise<Tokens> {
   const [accessToken, refreshToken] = await Promise.all([
     signToken(deps.config, userId, 'access'),
     signToken(deps.config, userId, 'refresh'),
@@ -73,7 +73,8 @@ export async function login(
     `SELECT ${USER_COLUMNS}, password_hash AS "passwordHash" FROM users WHERE email = $1`,
     [email.toLowerCase()],
   );
-  const found = rows[0] as (User & { passwordHash: string }) | undefined;
+  // Google-only accounts have no password (null), so they always fail here
+  const found = rows[0] as (User & { passwordHash: string | null }) | undefined;
   const isValid = await bcrypt.compare(password, found?.passwordHash ?? (await getDummyHash()));
   if (!found || !isValid) {
     deps.log.info({ module: 'auth', message: 'Login failed: invalid credentials' });

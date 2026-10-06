@@ -14,6 +14,10 @@ export interface Bindings {
   DATABASE_URL: string;
   /** Secret: JWT signing key (`wrangler secret put JWT_SECRET`, or .dev.vars) */
   JWT_SECRET: string;
+  /** Optional: Google OAuth client ID; "Sign in with Google" is enabled when both are set */
+  GOOGLE_CLIENT_ID?: string;
+  /** Optional secret: Google OAuth client secret (`wrangler secret put GOOGLE_CLIENT_SECRET`) */
+  GOOGLE_CLIENT_SECRET?: string;
   /** Local development only: host:port of the docker-compose Neon proxy */
   NEON_LOCAL_PROXY?: string;
 }
@@ -34,6 +38,8 @@ const configSchema = z.object({
     .regex(/^\d+[smhd]$/, 'must look like 7d')
     .default('7d'),
   MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(100).default(50),
+  GOOGLE_CLIENT_ID: z.string().trim().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().trim().min(1).optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -55,6 +61,13 @@ export function getConfig(env: Bindings): Config {
   }
   cached = { source: env, config: result.data };
   return result.data;
+}
+
+/** Google sign-in is available only when both the client ID and secret are configured. */
+export function isGoogleSignInEnabled(
+  config: Config,
+): config is Config & { GOOGLE_CLIENT_ID: string; GOOGLE_CLIENT_SECRET: string } {
+  return Boolean(config.GOOGLE_CLIENT_ID && config.GOOGLE_CLIENT_SECRET);
 }
 
 export function isLocalEnvironment(config: Config): boolean {

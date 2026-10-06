@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { PasswordInput } from '../common/PasswordInput';
 import { useAuthStore } from '../../stores/authStore';
 import { getRedirectTarget } from './redirect';
+import { GoogleSignIn, googleErrorMessage } from './GoogleSignIn';
 
 export function LoginForm() {
   const navigate = useNavigate();
@@ -15,6 +16,10 @@ export function LoginForm() {
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const errorRef = useRef<HTMLDivElement>(null);
+  // Set by the server when Google sign-in fails (/login?error=<reason>)
+  const [searchParams] = useSearchParams();
+  const googleError = googleErrorMessage(searchParams.get('error'));
+  const shownError = storeError ?? googleError;
 
   // Clear stale errors from a previous visit (e.g. after logging out).
   useEffect(() => {
@@ -22,8 +27,8 @@ export function LoginForm() {
   }, [clearError]);
 
   useEffect(() => {
-    if (storeError) errorRef.current?.focus();
-  }, [storeError]);
+    if (shownError) errorRef.current?.focus();
+  }, [shownError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +60,7 @@ export function LoginForm() {
         </p>
       </div>
 
-      {storeError && (
+      {shownError && (
         <div
           ref={errorRef}
           tabIndex={-1}
@@ -63,7 +68,7 @@ export function LoginForm() {
           className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 focus:outline-none"
         >
           <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-600" aria-hidden="true" />
-          <p className="text-sm text-red-700">{storeError}</p>
+          <p className="text-sm text-red-700">{shownError}</p>
         </div>
       )}
 
@@ -101,6 +106,8 @@ export function LoginForm() {
       <Button type="submit" className="w-full" isLoading={isLoading}>
         {isLoading ? 'Signing in…' : 'Sign in'}
       </Button>
+
+      <GoogleSignIn />
 
       <p className="text-center text-sm text-gray-600">
         Don&apos;t have an account?{' '}

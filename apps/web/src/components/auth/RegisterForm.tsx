@@ -7,6 +7,7 @@ import { PasswordInput } from '../common/PasswordInput';
 import { useAuthStore } from '../../stores/authStore';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from '@lexterrae/shared';
 import { getRedirectTarget } from './redirect';
+import { GoogleSignIn } from './GoogleSignIn';
 
 // Mirrors registerSchema in apps/api/src/validators/auth.validator.ts.
 const PASSWORD_REQUIREMENTS = [
@@ -233,6 +234,8 @@ export function RegisterForm() {
       <Button type="submit" className="w-full" isLoading={isLoading}>
         {isLoading ? 'Creating account…' : 'Create account'}
       </Button>
+
+      <GoogleSignIn />
 
       <p className="text-center text-sm text-gray-600">
         Already have an account?{' '}

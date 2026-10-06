@@ -12,6 +12,9 @@ const LoginPage = React.lazy(() =>
 const RegisterPage = React.lazy(() =>
   import('./pages/RegisterPage').then((m) => ({ default: m.RegisterPage })),
 );
+const GoogleCompletePage = React.lazy(() =>
+  import('./pages/GoogleCompletePage').then((m) => ({ default: m.GoogleCompletePage })),
+);
 const DocumentBrowserPage = React.lazy(() =>
   import('./pages/DocumentBrowserPage').then((m) => ({
     default: m.DocumentBrowserPage,
@@ -108,6 +111,7 @@ export function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/auth/google/complete" element={<GoogleCompletePage />} />
           <Route
             element={
               <AuthGuard>
