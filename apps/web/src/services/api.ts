@@ -271,7 +271,13 @@ export type AuthResponseWithRefresh = AuthResponse & { refreshToken?: string };
 
 // ── Requests ────────────────────────────────────────────────────────
 
-const NO_REFRESH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/logout'];
+const NO_REFRESH_PATHS = [
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/logout',
+  '/auth/providers',
+];
 
 async function send(path: string, options: RequestInit, token: string | null): Promise<Response> {
   const headers = new Headers(options.headers);
@@ -389,6 +395,23 @@ export const api = {
     } catch {
       // Ignore — local session is already cleared.
     }
+  },
+
+  /** Sign-in methods the server offers (Google appears only when it is configured). */
+  async getAuthProviders(): Promise<{ password: boolean; google: boolean }> {
+    const response = await send('/auth/providers', {}, null);
+    if (!response.ok) throw await parseErrorResponse(response);
+    return parseJson<{ password: boolean; google: boolean }>(response);
+  },
+
+  /**
+   * Completes Google sign-in: the server set the refresh cookie on its callback, so a refresh
+   * yields this browser's first access token.
+   */
+  async completeGoogleSignIn(): Promise<AuthResponse> {
+    const accessToken = await refreshAccessToken();
+    const user = await api.me();
+    return { accessToken, user };
   },
 
   /** Current user for the bearer token. */

@@ -37,6 +37,7 @@
   // Non-secret configuration. Secrets (set with `npx wrangler secret put <NAME>`):
   //   DATABASE_URL  Neon pooled connection string (…-pooler.….neon.tech)
   //   JWT_SECRET    at least 32 random characters
+  //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET  optional: enable "Sign in with Google"
   // Local development reads secrets and overrides from apps/api/.dev.vars.
   "vars": {
     "ENVIRONMENT": "production",

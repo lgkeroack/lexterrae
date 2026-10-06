@@ -107,6 +107,21 @@ extraction exceed the Free plan's CPU limit) and a Neon project.
    `DEPLOY_ENABLED` = `true`. Until then pushes skip the job; you can still run it by hand from
    the Actions tab.
 
+6. **Sign in with Google** (optional): in Google Cloud Console → _Google Auth Platform_, configure
+   the consent screen (External, scopes `openid`, `email`, `profile`), then create an OAuth client
+   (type _Web application_) with the authorized redirect URI
+   `https://<your-domain>/api/auth/google/callback`. Store both values as Worker secrets:
+
+   ```bash
+   cd apps/api
+   npx wrangler secret put GOOGLE_CLIENT_ID
+   npx wrangler secret put GOOGLE_CLIENT_SECRET
+   ```
+
+   The "Continue with Google" button appears once both are set. A Google account whose email
+   already belongs to a password account is not linked automatically; that user keeps signing in
+   with their password.
+
 Check a deployment with `curl https://<your-domain>/api/health`, follow logs with
 `npx wrangler tail`, and roll back with `npx wrangler rollback`.
 
