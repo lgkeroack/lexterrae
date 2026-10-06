@@ -146,7 +146,9 @@ export const documentQuerySchema = z
     search: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
     jurisdictionLevel: z.preprocess(
       emptyToUndefined,
-      z.enum(['federal', 'provincial', 'territorial', 'municipal']).optional(),
+      z
+        .enum(['federal', 'provincial', 'territorial', 'regional', 'municipal', 'indigenous'])
+        .optional(),
     ),
     jurisdictionId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
     fileType: z.preprocess(

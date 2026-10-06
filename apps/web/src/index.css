@@ -29,6 +29,11 @@
     accent-color: #000;
   }
 
+  /* Native search "clear" button: monochrome like everything else */
+  input[type='search']::-webkit-search-cancel-button {
+    filter: grayscale(1) brightness(0);
+  }
+
   ::selection {
     background: #000;
     color: #fff;

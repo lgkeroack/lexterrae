@@ -1,142 +1,33 @@
-import type { ProvinceData, LegalSystem } from '@lexterrae/shared';
-
-/**
- * Static fallback list of provinces/territories and their municipalities.
- *
- * The authoritative list (with database UUIDs) is loaded from GET /api/jurisdictions;
- * this list is only used to render the picker before/if that request fails.
- * Names mirror apps/api/db/seed.ts, and codes are derived with the same rule the
- * seed uses so that local codes line up with the API's `code` column.
- */
+import type { LegalSystem } from '@lexterrae/shared';
 
 /** Code of the federal jurisdiction ("Canada") in the seed data. */
 export const FEDERAL_CODE = 'CA';
 
-/** Same derivation as `municipalityCode()` in apps/api/db/seed.ts. */
-export function municipalityCode(provinceCode: string, cityName: string): string {
-  const slug = cityName
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/['\u2019]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  return `${provinceCode}-${slug}`;
+export interface ProvinceInfo {
+  /** Database UUID; set once GET /api/jurisdictions/top-level has loaded. */
+  id?: string;
+  name: string;
+  code: string;
+  level: 'provincial' | 'territorial';
+  legalSystem: LegalSystem;
 }
 
-function province(
-  name: string,
-  code: string,
-  level: ProvinceData['level'],
-  legalSystem: LegalSystem,
-  municipalities: string[],
-): ProvinceData {
-  return {
-    name,
-    code,
-    level,
-    legalSystem,
-    municipalities: municipalities.map((m) => ({ name: m, code: municipalityCode(code, m) })),
-  };
-}
-
-export const PROVINCES: ProvinceData[] = [
-  province('Alberta', 'AB', 'provincial', 'common_law', [
-    'Calgary',
-    'Edmonton',
-    'Red Deer',
-    'Lethbridge',
-    'Medicine Hat',
-    'Grande Prairie',
-    'St. Albert',
-    'Airdrie',
-  ]),
-  province('British Columbia', 'BC', 'provincial', 'common_law', [
-    'Vancouver',
-    'Victoria',
-    'Surrey',
-    'Burnaby',
-    'Richmond',
-    'Kelowna',
-    'Kamloops',
-    'Nanaimo',
-    'Squamish',
-    'Whistler',
-    'Prince George',
-    'Abbotsford',
-  ]),
-  province('Manitoba', 'MB', 'provincial', 'common_law', [
-    'Winnipeg',
-    'Brandon',
-    'Thompson',
-    'Steinbach',
-    'Portage la Prairie',
-  ]),
-  province('New Brunswick', 'NB', 'provincial', 'common_law', [
-    'Fredericton',
-    'Saint John',
-    'Moncton',
-    'Dieppe',
-    'Riverview',
-  ]),
-  province('Newfoundland and Labrador', 'NL', 'provincial', 'common_law', [
-    "St. John's",
-    'Mount Pearl',
-    'Corner Brook',
-    'Conception Bay South',
-    'Paradise',
-  ]),
-  province('Nova Scotia', 'NS', 'provincial', 'common_law', [
-    'Halifax',
-    'Cape Breton',
-    'Dartmouth',
-    'Truro',
-    'New Glasgow',
-  ]),
-  province('Ontario', 'ON', 'provincial', 'common_law', [
-    'Toronto',
-    'Ottawa',
-    'Mississauga',
-    'Brampton',
-    'Hamilton',
-    'London',
-    'Markham',
-    'Vaughan',
-    'Kitchener',
-    'Windsor',
-    'Richmond Hill',
-    'Oakville',
-    'Burlington',
-  ]),
-  province('Prince Edward Island', 'PE', 'provincial', 'common_law', [
-    'Charlottetown',
-    'Summerside',
-    'Stratford',
-    'Cornwall',
-  ]),
-  province('Quebec', 'QC', 'provincial', 'civil_law', [
-    'Montréal',
-    'Québec City',
-    'Laval',
-    'Gatineau',
-    'Longueuil',
-    'Sherbrooke',
-    'Lévis',
-    'Saguenay',
-    'Trois-Rivières',
-  ]),
-  province('Saskatchewan', 'SK', 'provincial', 'common_law', [
-    'Regina',
-    'Saskatoon',
-    'Prince Albert',
-    'Moose Jaw',
-    'Swift Current',
-  ]),
-  province('Northwest Territories', 'NT', 'territorial', 'common_law', [
-    'Yellowknife',
-    'Hay River',
-    'Inuvik',
-  ]),
-  province('Nunavut', 'NU', 'territorial', 'common_law', ['Iqaluit', 'Rankin Inlet', 'Arviat']),
-  province('Yukon', 'YT', 'territorial', 'common_law', ['Whitehorse', 'Dawson City']),
+/**
+ * Static list of provinces and territories, used to render the picker before (or if) the
+ * authoritative list with database UUIDs loads. Mirrors apps/api/db/seed.ts.
+ */
+export const PROVINCES: ProvinceInfo[] = [
+  { name: 'Alberta', code: 'AB', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'British Columbia', code: 'BC', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'Manitoba', code: 'MB', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'New Brunswick', code: 'NB', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'Newfoundland and Labrador', code: 'NL', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'Nova Scotia', code: 'NS', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'Ontario', code: 'ON', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'Prince Edward Island', code: 'PE', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'Quebec', code: 'QC', level: 'provincial', legalSystem: 'civil_law' },
+  { name: 'Saskatchewan', code: 'SK', level: 'provincial', legalSystem: 'common_law' },
+  { name: 'Northwest Territories', code: 'NT', level: 'territorial', legalSystem: 'common_law' },
+  { name: 'Nunavut', code: 'NU', level: 'territorial', legalSystem: 'common_law' },
+  { name: 'Yukon', code: 'YT', level: 'territorial', legalSystem: 'common_law' },
 ];

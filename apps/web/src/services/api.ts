@@ -11,6 +11,10 @@ import type {
   DocumentQueryParams,
   PaginatedResponse,
   JurisdictionTreeNode,
+  JurisdictionLevel,
+  JurisdictionSearchResult,
+  TopLevelJurisdictions,
+  CreateJurisdictionRequest,
   ApiErrorResponse,
 } from '@lexterrae/shared';
 
@@ -471,6 +475,42 @@ export const api = {
 
   async getJurisdictions(): Promise<JurisdictionTreeNode[]> {
     const res = await request<{ data: JurisdictionTreeNode[] }>('/jurisdictions');
+    return res.data;
+  },
+
+  /** Canada and the provinces and territories. */
+  async getTopLevelJurisdictions(): Promise<TopLevelJurisdictions> {
+    const res = await request<{ data: TopLevelJurisdictions }>('/jurisdictions/top-level');
+    return res.data;
+  },
+
+  /** Name search across every level (includes the user's own jurisdictions). */
+  async searchJurisdictions(
+    q: string,
+    options: { level?: JurisdictionLevel; within?: string; limit?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<JurisdictionSearchResult[]> {
+    const qs = buildQueryString({ q, ...options });
+    const res = await request<{ data: JurisdictionSearchResult[] }>(`/jurisdictions/search${qs}`, {
+      signal,
+    });
+    return res.data;
+  },
+
+  /** Everything inside a jurisdiction, e.g. all regional, municipal and Indigenous in a province. */
+  async getJurisdictionDescendants(id: string): Promise<JurisdictionSearchResult[]> {
+    const res = await request<{ data: JurisdictionSearchResult[] }>(
+      `/jurisdictions/${encodeURIComponent(id)}/descendants`,
+    );
+    return res.data;
+  },
+
+  /** Adds a jurisdiction that only the signed-in user can see. */
+  async createJurisdiction(input: CreateJurisdictionRequest): Promise<JurisdictionSearchResult> {
+    const res = await request<{ data: JurisdictionSearchResult }>('/jurisdictions', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
     return res.data;
   },
 } as const;

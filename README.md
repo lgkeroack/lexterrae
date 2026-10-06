@@ -1,7 +1,7 @@
 # Lex Terrae
 
-Organize and find Canadian legal documents by jurisdiction — federal, provincial/territorial and
-municipal — with an interactive map for tagging uploads.
+Organize and find Canadian legal documents by jurisdiction — federal, provincial/territorial,
+regional, municipal and Indigenous — with an interactive map for tagging uploads.
 
 ## Architecture
 
@@ -68,6 +68,16 @@ If you ran this project's older Docker stack (Postgres 16, Redis, MinIO), remove
 | `pnpm db:migrate` | Apply pending SQL migrations from `apps/api/db/migrations`                              |
 | `pnpm db:seed`    | Seed/refresh the Canadian jurisdiction list (idempotent)                                |
 | `pnpm run deploy` | Build the web app and deploy the Worker (needs `run`: `pnpm deploy` is a pnpm built-in) |
+
+## Jurisdiction data
+
+`pnpm db:seed` loads Canada, the 13 provinces and territories, and every regional, municipal and
+Indigenous jurisdiction (about 4,800) from `apps/api/db/data/jurisdictions.json`. That file is
+built from Statistics Canada's census subdivision boundary file (Open Government Licence –
+Canada) by `apps/api/db/data/build-jurisdictions.ts`, which documents which census types count as
+jurisdictions. To pick up a newer StatCan release, update the year in that script, run
+`pnpm --filter @lexterrae/api exec tsx db/data/build-jurisdictions.ts`, and commit the result;
+deploys re-run the seed. Users can also add jurisdictions of their own, which only they can see.
 
 ## Deploying to Cloudflare + Neon
 

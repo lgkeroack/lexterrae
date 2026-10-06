@@ -76,9 +76,7 @@ export function JurisdictionMap() {
       if (s.level === 'provincial' || s.level === 'territorial') map.set(s.id, 'selected');
     }
     for (const s of selections) {
-      if (s.level === 'municipal' && s.parentCode && !map.has(s.parentCode)) {
-        map.set(s.parentCode, 'partial');
-      }
+      if (s.parentCode && !map.has(s.parentCode)) map.set(s.parentCode, 'partial');
     }
     return map;
   }, [selections]);
@@ -86,7 +84,7 @@ export function JurisdictionMap() {
   const municipalCountByCode = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of selections) {
-      if (s.level === 'municipal' && s.parentCode) {
+      if (s.parentCode) {
         counts.set(s.parentCode, (counts.get(s.parentCode) ?? 0) + 1);
       }
     }
@@ -185,7 +183,7 @@ export function JurisdictionMap() {
         </button>
         <span className="text-xs text-gray-500">
           {isFederalSelected
-            ? 'Federal law selected. You can also add provinces or municipalities.'
+            ? 'Federal law selected. You can also add provinces, regions, municipalities or Indigenous lands.'
             : 'Use for federal statutes such as the Criminal Code.'}
         </span>
       </div>
@@ -319,7 +317,7 @@ export function JurisdictionMap() {
             className="h-3 w-3 rounded-sm border"
             style={{ background: COLORS.partial, borderColor: COLORS.stroke }}
           />
-          Some municipalities
+          Part selected
         </li>
         <li className="flex items-center gap-1.5">
           <span
@@ -343,8 +341,8 @@ export function JurisdictionMap() {
 
       <p className="text-xs text-gray-500">
         Click a province or territory (or Tab to it and press Enter/Space) to select all of it. To
-        pick specific cities, use <span className="font-medium">Municipalities</span> in the list
-        below.
+        pick a region, municipality or First Nation, search above or use{' '}
+        <span className="font-medium">Browse</span> in the list below.
       </p>
 
       {/* Non-map alternative */}
@@ -381,10 +379,10 @@ export function JurisdictionMap() {
                 <button
                   type="button"
                   onClick={() => setActiveProvince(p.code)}
-                  aria-label={`Choose municipalities in ${p.name}${muniCount ? ` (${muniCount} selected)` : ''}`}
+                  aria-label={`Browse regions, municipalities and Indigenous lands in ${p.name}${muniCount ? ` (${muniCount} selected)` : ''}`}
                   className="inline-flex flex-shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  Municipalities{muniCount > 0 ? ` (${muniCount})` : ''}
+                  Browse{muniCount > 0 ? ` (${muniCount})` : ''}
                   <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               </li>

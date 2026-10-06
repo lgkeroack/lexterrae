@@ -17,6 +17,8 @@ import { formatFileSize } from '../../utils/format';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { JurisdictionMap } from '../map/JurisdictionMap';
+import { JurisdictionSearch } from '../map/JurisdictionSearch';
+import { LawSources } from './LawSources';
 import { ProvinceDetail } from '../map/ProvinceDetail';
 import { JurisdictionSummary } from '../map/JurisdictionSummary';
 import {
@@ -464,6 +466,8 @@ export function UploadPanel() {
 
   return (
     <form onSubmit={handleSubmit} noValidate className="mx-auto max-w-3xl space-y-6">
+      <LawSources />
+
       {/* 1. File */}
       <section className="space-y-3" aria-labelledby="upload-file-heading">
         <h2 id="upload-file-heading" className="text-sm font-semibold text-gray-900">
@@ -646,8 +650,9 @@ export function UploadPanel() {
             3. Jurisdictions *
           </h2>
           <p className="mt-1 text-xs text-gray-500">
-            Tag where this document applies: federal, provinces and territories, or specific
-            municipalities (up to {MAX_JURISDICTION_SELECTIONS}).
+            Tag where this document applies (up to {MAX_JURISDICTION_SELECTIONS}): federal,
+            provinces and territories, regions, municipalities or Indigenous lands. Search by name,
+            browse a province, or add one that isn&apos;t listed.
           </p>
         </div>
 
@@ -674,6 +679,7 @@ export function UploadPanel() {
 
         <fieldset disabled={isBusy} className="min-w-0 space-y-4">
           <legend className="sr-only">Jurisdiction selection</legend>
+          <JurisdictionSearch />
           {activeProvince ? <ProvinceDetail /> : <JurisdictionMap />}
           <JurisdictionSummary />
         </fieldset>
