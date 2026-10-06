@@ -134,7 +134,12 @@ jobs:
           jq -e '.status == "healthy" and .checks.database.status == "healthy" and .checks.storage.status == "healthy"' health.json >/dev/null \
             || { echo "::error::Health check is not fully healthy"; exit 1; }
 
-          n=$(curl -fsS "$BASE_URL/api/jurisdictions/provinces" | jq '.data | length')
+          # Instances started before the secrets were set can still answer for a few seconds
+          for i in $(seq 1 12); do
+            n=$(curl -fsS "$BASE_URL/api/jurisdictions/provinces" | jq '.data | length' || true)
+            [ "$n" = 13 ] && break
+            sleep 5
+          done
           echo "Provinces/territories: $n"; [ "$n" = 13 ] || { echo "::error::Expected 13"; exit 1; }
 
           curl -fsS "$BASE_URL/" | grep -qi '<!doctype html' || { echo "::error::GET / is not HTML"; exit 1; }
