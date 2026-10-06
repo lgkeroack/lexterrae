@@ -9,8 +9,9 @@ import './index.css';
 window.addEventListener('vite:preloadError', (event) => {
   const key = 'lt:chunk-reload';
   try {
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, '1');
+    const last = Number(sessionStorage.getItem(key) ?? 0);
+    if (Date.now() - last < 10_000) return;
+    sessionStorage.setItem(key, String(Date.now()));
   } catch {
     return;
   }

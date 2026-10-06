@@ -8,12 +8,11 @@
 import { neon, neonConfig, Pool } from '@neondatabase/serverless';
 import { useLocalNeonProxy } from '../src/lib/neon.js';
 
-if (!process.env['DATABASE_URL']) {
-  try {
-    process.loadEnvFile('.env');
-  } catch {
-    // No .env file
-  }
+try {
+  // Never overrides variables already set, so an inline DATABASE_URL still wins
+  process.loadEnvFile('.env');
+} catch {
+  // No .env file
 }
 
 const databaseUrl = process.env['DATABASE_URL'];
@@ -24,13 +23,14 @@ if (!databaseUrl) {
 
 let host: string;
 try {
-  host = new URL(databaseUrl).hostname;
+  host = new URL(databaseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, '');
 } catch {
   console.error('DATABASE_URL is not a valid postgres:// connection string.');
   process.exit(1);
 }
 
-const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localtest.me');
+const isLocalHost =
+  ['localhost', '127.0.0.1', '::1', '0.0.0.0'].includes(host) || host.endsWith('.localtest.me');
 const localProxy = process.env['NEON_LOCAL_PROXY'];
 if (localProxy && isLocalHost) {
   useLocalNeonProxy(localProxy);

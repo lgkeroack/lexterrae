@@ -40,6 +40,7 @@ app.route('/api', api);
 // otherwise be cached as that chunk's content.
 app.get('/assets/*', async (c) => {
   const res = await c.env.ASSETS.fetch(c.req.raw);
+  if (res.status === 304) return res; // revalidation of a cached file that still exists
   const isFallback = res.headers.get('content-type')?.startsWith('text/html');
   if (!res.ok || isFallback) {
     return c.text('Not found', 404, { 'Cache-Control': 'no-store' });
