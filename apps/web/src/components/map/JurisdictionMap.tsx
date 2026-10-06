@@ -58,6 +58,8 @@ export function JurisdictionMap() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [focused, setFocused] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  /** What clicking a province does: select all of it, or open its own map to pick parts. */
+  const [clickMode, setClickMode] = useState<'select' | 'zoom'>('select');
 
   const {
     provinces,
@@ -138,14 +140,19 @@ export function JurisdictionMap() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  const activate = useCallback(
+    (code: string) => (clickMode === 'zoom' ? setActiveProvince(code) : toggleProvince(code)),
+    [clickMode, setActiveProvince, toggleProvince],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent, code: string) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        toggleProvince(code);
+        activate(code);
       }
     },
-    [toggleProvince],
+    [activate],
   );
 
   const describeState = (code: string): string => {
@@ -153,9 +160,9 @@ export function JurisdictionMap() {
     if (state === 'selected') return 'Entire jurisdiction selected';
     if (state === 'partial') {
       const n = municipalCountByCode.get(code) ?? 0;
-      return `${n} municipalit${n === 1 ? 'y' : 'ies'} selected`;
+      return `${n} selected inside`;
     }
-    return 'Not selected';
+    return clickMode === 'zoom' ? 'Click to zoom in' : 'Not selected';
   };
 
   if (activeProvince) return null;
@@ -186,6 +193,34 @@ export function JurisdictionMap() {
             ? 'Federal law selected. You can also add provinces, regions, municipalities or Indigenous lands.'
             : 'Use for federal statutes such as the Criminal Code.'}
         </span>
+      </div>
+
+      <div
+        className="flex flex-wrap items-center gap-2 text-xs"
+        role="group"
+        aria-label="Clicking a province"
+      >
+        <span className="text-gray-600">Clicking a province:</span>
+        {(
+          [
+            ['select', 'Selects all of it'],
+            ['zoom', 'Zooms in to pick regions and municipalities'],
+          ] as const
+        ).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            aria-pressed={clickMode === mode}
+            onClick={() => setClickMode(mode)}
+            className={`border px-2.5 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-black ${
+              clickMode === mode
+                ? 'border-black bg-black text-white'
+                : 'border-gray-400 hover:bg-gray-100'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* Map */}
@@ -234,7 +269,7 @@ export function JurisdictionMap() {
                 aria-checked={state === 'partial' ? 'mixed' : state === 'selected'}
                 aria-label={`${name} (${prov.level === 'territorial' ? 'territory' : 'province'}). ${describeState(prov.code)}.`}
                 className="cursor-pointer outline-none"
-                onClick={() => toggleProvince(prov.code)}
+                onClick={() => activate(prov.code)}
                 onKeyDown={(e) => handleKeyDown(e, prov.code)}
                 onMouseMove={(e) => {
                   setHovered(prov.code);
@@ -274,6 +309,10 @@ export function JurisdictionMap() {
                   fontSize={prov.code === 'PE' ? 11 : 15}
                   fontWeight={600}
                   fill={state === 'selected' || state === 'partial' ? '#FFFFFF' : '#000000'}
+                  // Halo in the province's own colour keeps labels legible over coastlines
+                  stroke={fill}
+                  strokeWidth={3}
+                  paintOrder="stroke"
                   aria-hidden="true"
                 >
                   {prov.code}

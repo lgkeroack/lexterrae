@@ -5,6 +5,7 @@ import { useJurisdictionStore } from '../../stores/jurisdictionStore';
 import { Button } from '../common/Button';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { AddJurisdictionDialog } from './AddJurisdictionDialog';
+import { ProvinceMap } from './ProvinceMap';
 
 type LevelFilter = 'all' | Extract<JurisdictionLevel, 'regional' | 'municipal' | 'indigenous'>;
 
@@ -127,6 +128,15 @@ export function ProvinceDetail() {
               {isEntireProvinceSelected ? `Entire ${kind} selected` : `Select entire ${kind}`}
             </Button>
           </div>
+        </div>
+
+        <div className="mb-4">
+          <ProvinceMap
+            provinceCode={province.code}
+            provinceName={province.name}
+            items={loaded?.status === 'loaded' ? loaded.items : []}
+            disabled={isEntireProvinceSelected}
+          />
         </div>
 
         <div className="mb-3 flex flex-wrap gap-1" role="group" aria-label="Show level">
