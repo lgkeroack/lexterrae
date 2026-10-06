@@ -275,11 +275,20 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
                   <path
                     key={`${layer}-${i}`}
                     d={paths[i]}
+                    // Translucent selection keeps the borders inside a selected area visible
                     fill={
-                      !linked ? '#F2F2F2' : isSelected ? '#000000' : isHover ? '#D6D6D6' : '#FFFFFF'
+                      !linked
+                        ? '#F2F2F2'
+                        : isSelected
+                          ? isHover
+                            ? 'rgba(0, 0, 0, 0.5)'
+                            : 'rgba(0, 0, 0, 0.3)'
+                          : isHover
+                            ? '#D6D6D6'
+                            : '#FFFFFF'
                     }
                     stroke={linked ? '#000000' : '#BDBDBD'}
-                    strokeWidth={isHover && linked ? 1.5 : 0.6}
+                    strokeWidth={(isHover || isSelected) && linked ? 1.2 : 0.6}
                     vectorEffect="non-scaling-stroke"
                     strokeLinejoin="round"
                     className={linked && !disabled ? 'cursor-pointer' : undefined}

@@ -3,13 +3,14 @@ import { Check, ChevronRight, Landmark } from 'lucide-react';
 import { useJurisdictionStore } from '../../stores/jurisdictionStore';
 import { PROVINCE_MAP_DATA, MAP_VIEWBOX } from '../../data/map-paths';
 
-// Monochrome map: black = entire province selected, grey = some municipalities.
+// Monochrome map. Selections are translucent black so coastlines and borders stay visible:
+// darker = entire province selected, lighter = something inside it selected.
 // Keyboard focus is shown by a heavier outline rather than a colour.
 const COLORS = {
   unselected: '#FFFFFF',
   hover: '#D6D6D6',
-  selected: '#000000',
-  partial: '#8A8A8A',
+  selected: 'rgba(0, 0, 0, 0.4)',
+  partial: 'rgba(0, 0, 0, 0.15)',
   stroke: '#000000',
   strokeSelected: '#000000',
   focus: '#000000',
@@ -308,9 +309,9 @@ export function JurisdictionMap() {
                   className="pointer-events-none select-none"
                   fontSize={prov.code === 'PE' ? 11 : 15}
                   fontWeight={600}
-                  fill={state === 'selected' || state === 'partial' ? '#FFFFFF' : '#000000'}
-                  // Halo in the province's own colour keeps labels legible over coastlines
-                  stroke={fill}
+                  fill="#000000"
+                  // White halo keeps labels legible over coastlines and translucent fills
+                  stroke="#FFFFFF"
                   strokeWidth={3}
                   paintOrder="stroke"
                   aria-hidden="true"
