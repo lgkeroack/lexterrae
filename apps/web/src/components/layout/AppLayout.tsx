@@ -4,6 +4,8 @@ import { FileText, Upload, LogOut, Menu, X } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { formatTitle } from '../common/useDocumentTitle';
 import { LoadingSpinner } from '../common/LoadingSpinner';
+import { UndoToast } from '../common/UndoToast';
+import { useUndoStore } from '../../stores/undoStore';
 
 const navItems = [
   { to: '/documents', label: 'Documents', icon: FileText },
@@ -65,6 +67,7 @@ export function AppLayout() {
   const handleLogout = () => {
     // Navigate first so AuthGuard doesn't record this page as the post-login target.
     navigate('/login', { replace: true });
+    useUndoStore.getState().dismiss();
     logout();
   };
 
@@ -225,6 +228,7 @@ export function AppLayout() {
             <Outlet />
           </Suspense>
         </main>
+        <UndoToast />
       </div>
     </div>
   );

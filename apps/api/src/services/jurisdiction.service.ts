@@ -430,6 +430,41 @@ export async function createJurisdiction(
   return visible.toResult(created);
 }
 
+/**
+ * Deletes a jurisdiction the user added. Refused while any document (including ones deleted
+ * within the undo window) is tagged with it, or while other jurisdictions sit inside it.
+ */
+export async function deleteCustomJurisdiction(
+  deps: Deps,
+  userId: string,
+  id: string,
+): Promise<void> {
+  const [row] = (await deps.sql.query(
+    `SELECT name,
+       (SELECT count(*)::int FROM document_jurisdictions WHERE jurisdiction_id = j.id) AS documents,
+       (SELECT count(*)::int FROM jurisdictions c WHERE c.parent_id = j.id) AS children
+     FROM jurisdictions j WHERE j.id = $1 AND j.created_by = $2`,
+    [id, userId],
+  )) as { name: string; documents: number; children: number }[];
+  if (!row) throw new NotFoundError(`Jurisdiction with ID "${id}" not found`);
+  if (row.documents > 0) {
+    throw new ConflictError(
+      `"${row.name}" is used by ${row.documents} document${row.documents === 1 ? '' : 's'}. ` +
+        'Remove it from them first.',
+    );
+  }
+  if (row.children > 0) {
+    throw new ConflictError(`"${row.name}" has jurisdictions inside it. Delete those first.`);
+  }
+  await deps.sql.query(`DELETE FROM jurisdictions WHERE id = $1 AND created_by = $2`, [id, userId]);
+  deps.log.info({
+    module: 'jurisdictions',
+    message: 'Custom jurisdiction deleted',
+    userId,
+    jurisdictionId: id,
+  });
+}
+
 /** The jurisdiction plus all descendants (e.g. a province and everything in it). */
 export async function getSelfAndDescendantIds(
   deps: Deps,

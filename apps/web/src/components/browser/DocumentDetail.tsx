@@ -19,6 +19,7 @@ import { useDocumentStore, fetchDocumentBlob } from '../../stores/documentStore'
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Badge } from '../common/Badge';
+import { useUndoStore } from '../../stores/undoStore';
 import { Modal } from '../common/Modal';
 import { formatDate, formatDateTime, formatFileSize, toISODate } from '../../utils/format';
 
@@ -197,6 +198,14 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
     try {
       await deleteDocument(doc.id);
       setShowDeleteModal(false);
+      const { id, title } = doc;
+      useUndoStore.getState().push({
+        message: `Deleted “${title}”`,
+        undo: async () => {
+          await useDocumentStore.getState().restoreDocuments([id]);
+          navigate(`/documents/${id}`);
+        },
+      });
       // Replace so Back doesn't return to a deleted document.
       navigate(backTo, { replace: true });
     } catch {

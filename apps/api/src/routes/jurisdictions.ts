@@ -90,6 +90,13 @@ router.post('/', authenticate, async (c) => {
   return c.json({ data }, 201);
 });
 
+/** DELETE /api/jurisdictions/:id — delete a jurisdiction the user added (if unused). */
+router.delete('/:id', authenticate, async (c) => {
+  const { id } = validParams(c, paramsSchema);
+  await jurisdictions.deleteCustomJurisdiction(c.get('deps'), c.get('userId'), id);
+  return c.body(null, 204);
+});
+
 /** GET /api/jurisdictions/:id/descendants?level= — everything inside a jurisdiction. */
 router.get('/:id/descendants', optionalAuthenticate, async (c) => {
   const { id } = validParams(c, paramsSchema);

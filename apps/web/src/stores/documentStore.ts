@@ -35,6 +35,8 @@ interface DocumentState {
     updates: DocumentUpdateRequest,
   ) => Promise<DocumentWithJurisdictions>;
   deleteDocument: (id: string) => Promise<void>;
+  /** Undoes deletes (until the retention job purges them) and refreshes the list. */
+  restoreDocuments: (ids: string[]) => Promise<void>;
   downloadDocument: (id: string, filename: string) => Promise<void>;
   setQueryParams: (params: Partial<DocumentQueryParams>) => void;
   clearError: () => void;
@@ -254,6 +256,22 @@ export const useDocumentStore = create<DocumentState>((set, get) => ({
       }
       set({ actionError: getErrorMessage(err, 'Delete failed') });
       throw err;
+    }
+  },
+
+  restoreDocuments: async (ids: string[]) => {
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        const res = await authFetch(`/documents/${encodeURIComponent(id)}/restore`, {
+          method: 'POST',
+        });
+        await throwIfNotOk(res);
+      }),
+    );
+    void get().fetchDocuments();
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    if (failed > 0) {
+      throw new Error(`${failed} of ${ids.length} document(s) could not be restored.`);
     }
   },
 

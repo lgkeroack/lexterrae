@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, RotateCcw } from 'lucide-react';
-import { geoCentroid, geoConicConformal, geoPath, select, zoom, zoomIdentity } from 'd3';
+import { geoArea, geoCentroid, geoConicConformal, geoPath, select, zoom, zoomIdentity } from 'd3';
 import type { ZoomBehavior } from 'd3';
 import { feature } from 'topojson-client';
 import type { Topology, GeometryCollection } from 'topojson-specification';
@@ -101,6 +101,14 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
       Polygon | MultiPolygon,
       ShapeProps
     >;
+    // Guard: a ring wound the wrong way would cover the whole globe and wreck the fit
+    for (const f of [...all.features, ...current.features]) {
+      if (geoArea(f) > 2 * Math.PI) {
+        const g = f.geometry;
+        const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+        for (const rings of polys) rings.forEach((ring) => ring.reverse());
+      }
+    }
     // Same Lambert conformal conic as the national map, centred on this province
     const [lon] = geoCentroid(all);
     const projection = geoConicConformal()

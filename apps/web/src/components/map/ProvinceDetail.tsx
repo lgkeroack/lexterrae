@@ -1,6 +1,11 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ArrowLeft, Plus, Search } from 'lucide-react';
-import { JURISDICTION_LEVEL_LABELS, type JurisdictionLevel } from '@lexterrae/shared';
+import {
+  JURISDICTION_LEVEL_LABELS,
+  type JurisdictionLevel,
+  type JurisdictionSearchResult,
+} from '@lexterrae/shared';
+import { getErrorMessage } from '../../services/api';
 import { useJurisdictionStore } from '../../stores/jurisdictionStore';
 import { Button } from '../common/Button';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -27,7 +32,17 @@ export function ProvinceDetail() {
     toggleJurisdiction,
     toggleEntireProvince,
     loadProvinceContents,
+    deleteCustomJurisdiction,
   } = useJurisdictionStore();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const removeCustom = async (item: JurisdictionSearchResult) => {
+    setDeleteError(null);
+    try {
+      await deleteCustomJurisdiction(item);
+    } catch (err) {
+      setDeleteError(getErrorMessage(err, `Could not delete ${item.name}.`));
+    }
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<LevelFilter>('all');
@@ -74,28 +89,47 @@ export function ProvinceDetail() {
     );
   }, [loaded, filter, searchQuery]);
 
-  if (!activeProvince || !province) return null;
-
   const goBack = () => {
-    const code = province.code;
+    const code = activeProvince;
     setActiveProvince(null);
     // Return focus to the province's row in the list once the map re-renders
     requestAnimationFrame(() => document.getElementById(`jurisdiction-${code}`)?.focus());
   };
+  const goBackRef = useRef(goBack);
+  goBackRef.current = goBack;
+
+  // Escape returns to the map (unless a dialog is open: it closes itself first)
+  useEffect(() => {
+    if (!activeProvince) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      goBackRef.current();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [activeProvince]);
+
+  if (!activeProvince || !province) return null;
 
   const kind = province.level === 'territorial' ? 'territory' : 'province';
 
   return (
     <div className="w-full">
-      <div className="mb-4">
+      {/* Stays in view while scrolling the province, so there is always a way back */}
+      <div className="sticky top-0 z-20 -mx-1 mb-4 flex items-center justify-between gap-2 border-b border-black bg-white px-1 py-2">
         <button
           type="button"
           onClick={goBack}
-          className="flex items-center gap-1 px-2 py-1 text-sm text-gray-700 hover:underline focus:outline-none focus:ring-2 focus:ring-black"
+          className="flex items-center gap-1 px-2 py-1 text-sm font-medium text-black hover:underline focus:outline-none focus:ring-2 focus:ring-black"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to map
+          Back to map of Canada
         </button>
+        <span className="truncate text-xs text-gray-500">
+          {province.name}
+          {selectedCount > 0 && ` · ${selectedCount} selected`} · Esc to go back
+        </span>
       </div>
 
       <div className="border border-gray-300 bg-white p-4">
@@ -177,6 +211,11 @@ export function ProvinceDetail() {
           />
         </div>
 
+        {deleteError && (
+          <p role="alert" className="mb-2 text-sm font-bold italic">
+            {deleteError}
+          </p>
+        )}
         <fieldset>
           <legend className="sr-only">Jurisdictions in {province.name}</legend>
           <div className="max-h-80 overflow-y-auto">
@@ -218,9 +257,9 @@ export function ProvinceDetail() {
                     .map((p) => p.name)
                     .join(', ');
                   return (
-                    <li key={item.id}>
+                    <li key={item.id} className="flex items-start">
                       <label
-                        className={`flex items-start gap-3 px-3 py-2 transition-colors ${
+                        className={`flex min-w-0 flex-1 items-start gap-3 px-3 py-2 transition-colors ${
                           isEntireProvinceSelected
                             ? 'cursor-not-allowed'
                             : 'cursor-pointer hover:bg-gray-50'
@@ -249,6 +288,16 @@ export function ProvinceDetail() {
                           </span>
                         </span>
                       </label>
+                      {item.isCustom && (
+                        <button
+                          type="button"
+                          onClick={() => void removeCustom(item)}
+                          aria-label={`Delete ${item.name} (added by you)`}
+                          className="mx-2 my-2 flex-shrink-0 border border-gray-400 px-2 py-0.5 text-xs hover:border-black hover:bg-black hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </li>
                   );
                 })}

@@ -14,6 +14,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { geoArea } from 'd3';
 import polygonClipping from 'polygon-clipping';
+import { feature as toGeoJSON } from 'topojson-client';
 import { topology } from 'topojson-server';
 
 const CSD_SERVICE =
@@ -104,6 +105,34 @@ const normalize = (s) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+
+/**
+ * Quantization can flip the orientation of tiny rings. Enforce d3's convention ring by ring, in
+ * arc-index form: an outer ring encloses less than a hemisphere, a hole more (reversing a ring
+ * means reversing its arc list and complementing each index).
+ */
+function fixWinding(topo) {
+  const hemisphere = 2 * Math.PI;
+  for (const object of Object.values(topo.objects)) {
+    for (const geometry of object.geometries) {
+      const polygons =
+        geometry.type === 'Polygon'
+          ? [geometry.arcs]
+          : geometry.type === 'MultiPolygon'
+            ? geometry.arcs
+            : [];
+      for (const rings of polygons) {
+        rings.forEach((ring, i) => {
+          const area = geoArea(toGeoJSON(topo, { type: 'Polygon', arcs: [ring] }));
+          const isHole = i > 0;
+          if (isHole ? area < hemisphere : area > hemisphere) {
+            rings[i] = [...ring].reverse().map((arc) => ~arc);
+          }
+        });
+      }
+    }
+  }
+}
 
 const LEVEL_KEY = { regional: 'r', municipal: 'm', indigenous: 'i' };
 
@@ -205,6 +234,7 @@ async function buildProvince(code, records) {
     },
     QUANTIZATION,
   );
+  fixWinding(topo);
   const json = JSON.stringify(topo);
   const out = new URL(`../public/maps/${code}.json`, import.meta.url);
   await writeFile(out, json);
