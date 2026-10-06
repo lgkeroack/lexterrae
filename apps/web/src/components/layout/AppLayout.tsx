@@ -1,6 +1,6 @@
 import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom';
-import { FileText, Upload, LogOut, Menu, X, MapPin } from 'lucide-react';
+import { FileText, Upload, LogOut, Menu, X } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { formatTitle } from '../common/useDocumentTitle';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -74,7 +74,7 @@ export function AppLayout() {
   };
 
   return (
-    <div className="flex h-screen h-dvh bg-gray-50">
+    <div className="flex h-screen h-dvh bg-white">
       <a
         href="#main-content"
         className="sr-only z-50 rounded-md bg-white px-4 py-2 text-sm font-medium text-blue-700 shadow focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -98,7 +98,7 @@ export function AppLayout() {
         className={`
           fixed inset-y-0 left-0 z-30 w-64 max-w-[85vw] transform bg-white shadow-lg
           duration-200 ease-in-out
-          lg:visible lg:relative lg:translate-x-0 lg:shadow-none lg:border-r lg:border-gray-200
+          lg:visible lg:relative lg:translate-x-0 lg:shadow-none lg:border-r lg:border-black
           ${
             // Becomes visible instantly on open (so focus can move in), but stays
             // visible until the slide-out finishes on close. Hidden drawer links
@@ -111,9 +111,13 @@ export function AppLayout() {
       >
         <div className="flex h-full flex-col">
           {/* Logo / Title */}
-          <div className="flex h-16 items-center gap-2 border-b border-gray-200 px-6">
-            <MapPin className="h-6 w-6 text-blue-600" aria-hidden="true" />
-            <span className="text-xl font-bold text-gray-900">Lex Terrae</span>
+          <div className="flex h-16 items-center gap-2 border-b-4 border-double border-black px-6">
+            <span className="text-2xl font-bold leading-none" aria-hidden="true">
+              §
+            </span>
+            <span className="text-xl font-bold tracking-wide text-black [font-variant-caps:small-caps]">
+              Lex Terrae
+            </span>
             {/* Close button for mobile */}
             <button
               ref={closeButtonRef}
@@ -135,8 +139,8 @@ export function AppLayout() {
                 className={({ isActive }) =>
                   `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-black text-white'
+                      : 'text-black underline-offset-4 hover:underline'
                   }`
                 }
               >
@@ -147,10 +151,10 @@ export function AppLayout() {
           </nav>
 
           {/* User info / Logout */}
-          <div className="border-t border-gray-200 p-4">
+          <div className="border-t border-black p-4">
             <div className="mb-3 flex items-center gap-3">
               <div
-                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-semibold text-blue-700"
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center border border-black text-sm font-semibold text-black"
                 aria-hidden="true"
               >
                 {initials(user?.displayName)}
@@ -169,7 +173,7 @@ export function AppLayout() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-red-50 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:underline underline-offset-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
             >
               <LogOut className="h-4 w-4" aria-hidden="true" />
               Log out
@@ -181,7 +185,7 @@ export function AppLayout() {
       {/* Main content area */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar (mobile) */}
-        <header className="flex h-14 flex-shrink-0 items-center border-b border-gray-200 bg-white px-2 sm:px-4 lg:hidden">
+        <header className="flex h-14 flex-shrink-0 items-center border-b-4 border-double border-black bg-white px-2 sm:px-4 lg:hidden">
           <button
             ref={menuButtonRef}
             type="button"
@@ -194,8 +198,12 @@ export function AppLayout() {
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
           <div className="ml-2 flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-blue-600" aria-hidden="true" />
-            <span className="text-lg font-bold text-gray-900">Lex Terrae</span>
+            <span className="text-xl font-bold leading-none" aria-hidden="true">
+              §
+            </span>
+            <span className="text-lg font-bold tracking-wide text-black [font-variant-caps:small-caps]">
+              Lex Terrae
+            </span>
           </div>
         </header>
 
