@@ -3,14 +3,41 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    font-family: theme('fontFamily.serif');
+    -webkit-font-smoothing: auto;
+  }
+
   body {
-    @apply min-h-screen;
+    @apply min-h-screen bg-white text-black;
+    font-kerning: normal;
+    font-variant-ligatures: common-ligatures;
+  }
+
+  /* Legal-document headings: small capitals, slightly spaced */
+  h1,
+  h2,
+  h3 {
+    font-variant-caps: small-caps;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'],
+  progress {
+    accent-color: #000;
+  }
+
+  ::selection {
+    background: #000;
+    color: #fff;
   }
 
   /* Fallback visible focus indicator for any interactive element that
      doesn't define its own focus-visible styles. */
   :focus-visible {
-    outline: 2px solid theme('colors.blue.600');
+    outline: 2px solid #000;
     outline-offset: 2px;
   }
 }

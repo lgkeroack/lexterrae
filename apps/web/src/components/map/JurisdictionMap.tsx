@@ -3,16 +3,18 @@ import { Check, ChevronRight, Landmark } from 'lucide-react';
 import { useJurisdictionStore } from '../../stores/jurisdictionStore';
 import { PROVINCE_MAP_DATA, MAP_VIEWBOX } from '../../data/map-paths';
 
+// Monochrome map: black = entire province selected, grey = some municipalities.
+// Keyboard focus is shown by a heavier outline rather than a colour.
 const COLORS = {
-  unselected: '#E5E7EB',
-  hover: '#BFDBFE',
-  selected: '#2563EB',
-  partial: '#93C5FD',
-  stroke: '#9CA3AF',
-  strokeSelected: '#1E40AF',
-  focus: '#F59E0B',
-  civilLaw: '#EDE9FE',
-  water: '#F0F9FF',
+  unselected: '#FFFFFF',
+  hover: '#D6D6D6',
+  selected: '#000000',
+  partial: '#8A8A8A',
+  stroke: '#000000',
+  strokeSelected: '#000000',
+  focus: '#000000',
+  civilLaw: '#EFEFEF',
+  water: '#FFFFFF',
 };
 
 type ProvinceState = 'selected' | 'partial' | 'none';
@@ -260,7 +262,7 @@ export function JurisdictionMap() {
                         ? COLORS.strokeSelected
                         : COLORS.stroke
                   }
-                  strokeWidth={isFocus ? 4 : state === 'selected' ? 2 : 1}
+                  strokeWidth={isFocus ? 5 : state === 'selected' ? 2 : 1}
                   strokeDasharray={prov.level === 'territorial' && !isFocus ? '5,3' : undefined}
                   strokeLinejoin="round"
                   className="transition-colors duration-150"
@@ -273,7 +275,7 @@ export function JurisdictionMap() {
                   className="pointer-events-none select-none"
                   fontSize={prov.code === 'PE' ? 11 : 15}
                   fontWeight={600}
-                  fill={state === 'selected' ? '#FFFFFF' : '#1F2937'}
+                  fill={state === 'selected' || state === 'partial' ? '#FFFFFF' : '#000000'}
                   aria-hidden="true"
                 >
                   {prov.code}

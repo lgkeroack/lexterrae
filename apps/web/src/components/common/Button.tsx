@@ -13,12 +13,13 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500 disabled:bg-blue-300',
+    'border border-black bg-black text-white hover:bg-white hover:text-black focus-visible:ring-black disabled:border-gray-300 disabled:bg-gray-300 disabled:text-white',
   secondary:
-    'bg-gray-200 text-gray-800 hover:bg-gray-300 focus-visible:ring-gray-400 disabled:bg-gray-100 disabled:text-gray-500',
-  danger: 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-500 disabled:bg-red-300',
+    'border border-black bg-white text-black hover:bg-black hover:text-white focus-visible:ring-black disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-white',
+  danger:
+    'border-2 border-black bg-white font-bold uppercase tracking-wider text-black hover:bg-black hover:text-white focus-visible:ring-black disabled:border-gray-300 disabled:text-gray-400',
   ghost:
-    'bg-transparent text-gray-700 hover:bg-gray-100 focus-visible:ring-gray-400 disabled:text-gray-300',
+    'border border-transparent bg-transparent text-black underline-offset-4 hover:underline focus-visible:ring-black disabled:text-gray-400',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -42,7 +43,7 @@ export function Button({
       type={type}
       aria-busy={isLoading || undefined}
       className={`
-        inline-flex items-center justify-center gap-2 rounded-md font-medium
+        inline-flex items-center justify-center gap-2 font-medium tracking-wide
         transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2
         disabled:cursor-not-allowed
         ${variantClasses[variant]}
