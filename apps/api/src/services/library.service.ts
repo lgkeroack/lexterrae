@@ -1,4 +1,9 @@
-import type { JurisdictionSearchResult, LibraryDocument } from '@lexterrae/shared';
+import type {
+  JurisdictionLevel,
+  JurisdictionSearchResult,
+  LibraryDocument,
+} from '@lexterrae/shared';
+import { buildPackage, packageFilename, type PackageDocument } from '../lib/llm-package.js';
 import type { Deps } from '../types.js';
 import * as jurisdictions from './jurisdiction.service.js';
 
@@ -75,5 +80,71 @@ export async function listLibrary(deps: Deps, query: LibraryQuery) {
       totalItems: total,
       totalPages: Math.ceil(total / query.pageSize),
     },
+  };
+}
+
+/** Most documents and text one package may hold, to stay within Worker memory and LLM limits. */
+const PACKAGE_MAX_DOCUMENTS = 500;
+const PACKAGE_MAX_TEXT_CHARS = 20_000_000;
+
+/**
+ * The reference package for AI assistants (see lib/llm-package.ts), built on request from what
+ * is in the backend now: every document that applies in the place, with its full text.
+ */
+export async function buildLibraryPackage(deps: Deps, jurisdictionId: string, now = new Date()) {
+  const ids = await jurisdictions.getSelfAndAncestorIds(deps, jurisdictionId);
+  const [place] = await jurisdictions.findByIds(deps, [jurisdictionId]);
+  const rows = (await deps.sql.query(
+    `SELECT d.id, d.title, d.description, d.tags, d.file_type AS "fileType",
+       d.original_filename AS "originalFilename", d.content_text AS "contentText",
+       d.uploaded_at AS "uploadedAt", d.updated_at AS "updatedAt",
+       COALESCE((
+         SELECT json_agg(json_build_object('id', j.id, 'name', j.name, 'level', j.level)
+                         ORDER BY j.name)
+         FROM document_jurisdictions dj JOIN jurisdictions j ON j.id = dj.jurisdiction_id
+         WHERE dj.document_id = d.id AND j.created_by IS NULL
+       ), '[]'::json) AS jurisdictions
+     FROM documents d
+     WHERE d.deleted_at IS NULL
+       AND EXISTS (SELECT 1 FROM document_jurisdictions dj
+                   WHERE dj.document_id = d.id AND dj.jurisdiction_id = ANY($1::uuid[]))
+     ORDER BY d.title, d.id
+     LIMIT ${PACKAGE_MAX_DOCUMENTS}`,
+    [ids],
+  )) as unknown as (Omit<PackageDocument, 'jurisdictions'> & {
+    jurisdictions: { id: string; name: string; level: JurisdictionLevel }[];
+  })[];
+
+  const paths = await jurisdictions.getPaths(
+    deps,
+    rows.flatMap((d) => d.jurisdictions.map((j) => j.id)),
+  );
+  // Most local first, matching the user-facing page: the place, its ancestors, then Canada
+  const order = [jurisdictionId, ...[...place!.path].reverse().map((p) => p.id)];
+  const rank = (doc: (typeof rows)[number]) => {
+    const found = order.findIndex((id) => doc.jurisdictions.some((j) => j.id === id));
+    return found === -1 ? order.length : found;
+  };
+  rows.sort((a, b) => rank(a) - rank(b));
+
+  let budget = PACKAGE_MAX_TEXT_CHARS;
+  const docs: PackageDocument[] = rows.map((doc) => {
+    const text = doc.contentText && doc.contentText.length <= budget ? doc.contentText : null;
+    if (text) budget -= text.length;
+    return {
+      ...doc,
+      contentText: text,
+      jurisdictions: doc.jurisdictions.map((j) => ({
+        name: j.name,
+        level: j.level,
+        path: paths.get(j.id) ?? [],
+        applies: ids.includes(j.id),
+      })),
+    };
+  });
+
+  return {
+    filename: packageFilename(place!.name, now),
+    body: buildPackage(place!, docs, now),
   };
 }

@@ -33,4 +33,26 @@ router.get('/documents', searchLimiter, async (c) => {
   return c.json(await library.listLibrary(c.get('deps'), query), 200);
 });
 
+const packageSchema = z.object({
+  jurisdictionId: z
+    .string({ required_error: 'Choose a location (jurisdictionId)' })
+    .uuid('jurisdictionId must be a jurisdiction UUID'),
+});
+
+/**
+ * GET /api/library/package?jurisdictionId= — a Markdown file for AI assistants holding every
+ * document that applies in the place, built from the backend's current contents.
+ */
+router.get('/package', searchLimiter, async (c) => {
+  const { jurisdictionId } = validQuery(c, packageSchema);
+  const { filename, body } = await library.buildLibraryPackage(c.get('deps'), jurisdictionId);
+  return c.body(body, 200, {
+    'Content-Type': 'text/markdown; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'",
+    'Cache-Control': 'no-store',
+  });
+});
+
 export default router;

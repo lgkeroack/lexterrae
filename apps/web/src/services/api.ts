@@ -544,6 +544,28 @@ export const api = {
     return request<LibraryResponse>(`/library/documents?${query}`, { signal });
   },
 
+  /**
+   * Downloads the AI reference package for a place: a Markdown file with every document that
+   * applies there, to upload to Claude, ChatGPT or another assistant. Returns the filename.
+   */
+  async downloadLibraryPackage(jurisdictionId: string): Promise<string> {
+    const res = await authFetch(
+      `/library/package?jurisdictionId=${encodeURIComponent(jurisdictionId)}`,
+    );
+    if (!res.ok) throw await parseErrorResponse(res);
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'lex-terrae-package.md';
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return filename;
+  },
+
   /** The signed-in user's backend role (null when not authorized). */
   async getBackendAccess(): Promise<BackendRole | null> {
     const res = await request<BackendAccess>('/access');
