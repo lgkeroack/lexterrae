@@ -55,9 +55,7 @@ export function CaseFilter({ caseIn, isActive, onChange }: CaseFilterProps) {
       <div className="flex flex-col gap-2 border border-black px-4 py-3 text-sm sm:flex-row sm:items-start sm:justify-between">
         <p>
           <Scale className="mr-1.5 inline h-4 w-4 align-text-bottom" aria-hidden="true" />
-          Showing what applies to a case in <strong>{caseIn ?? 'the chosen place'}</strong>: its own
-          documents and those of every jurisdiction it is part of (its region, province or
-          territory, and Canada). Documents for places inside it or elsewhere are left out.
+          Showing what applies to a case in <strong>{caseIn ?? 'the chosen place'}</strong>.
         </p>
         <button
           type="button"
