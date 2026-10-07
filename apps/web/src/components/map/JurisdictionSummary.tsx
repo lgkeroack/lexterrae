@@ -7,7 +7,7 @@ import {
 } from '../../stores/jurisdictionStore';
 
 const chipColors: Record<JurisdictionSelection['level'], string> = {
-  federal: 'bg-black text-white border-black',
+  federal: 'bg-accent text-white border-black',
   provincial: 'bg-white text-black border-black',
   territorial: 'bg-white text-black border-black border-dashed',
   regional: 'bg-white text-black border-gray-500',
@@ -38,7 +38,7 @@ function SelectionChip({
         type="button"
         onClick={onRemove}
         aria-label={`Remove ${label}`}
-        className="inline-flex items-center rounded-full p-0.5 hover:bg-black/10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="inline-flex items-center rounded-full p-0.5 hover:bg-accent/10 focus:outline-none focus:ring-2 focus:ring-accent"
       >
         <X className="h-3 w-3" aria-hidden="true" />
       </button>
@@ -86,7 +86,7 @@ export function JurisdictionSummary() {
               overLimit
                 ? 'bg-red-600 text-white'
                 : totalCount > 0
-                  ? 'bg-blue-600 text-white'
+                  ? 'bg-accent text-white'
                   : 'bg-gray-200 text-gray-700'
             }`}
           >

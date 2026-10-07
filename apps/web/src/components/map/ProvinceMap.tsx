@@ -3,46 +3,18 @@ import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { geoArea, geoCentroid, geoConicConformal, geoPath, select, zoom, zoomIdentity } from 'd3';
 import type { ZoomBehavior } from 'd3';
 import { feature } from 'topojson-client';
-import type { Topology, GeometryCollection } from 'topojson-specification';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 import type { JurisdictionSearchResult } from '@lexterrae/shared';
+import { loadProvinceMap, type ProvinceTopology, type ShapeProps } from '../../data/provinceMaps';
 import { useJurisdictionStore } from '../../stores/jurisdictionStore';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 
-/** Shape properties written by scripts/build-province-maps.mjs. */
-interface ShapeProps {
-  /** Jurisdiction code; absent for areas with no government of their own. */
-  c?: string;
-  n: string;
-  /** r = regional, m = municipal, i = Indigenous */
-  l?: 'r' | 'm' | 'i';
-}
-
 type Layer = 'regions' | 'local';
-type ProvinceTopology = Topology<{
-  regions: GeometryCollection<ShapeProps>;
-  local: GeometryCollection<ShapeProps>;
-}>;
 type Shape = Feature<Polygon | MultiPolygon, ShapeProps>;
 
 const WIDTH = 800;
 const MAX_HEIGHT = 560;
 const LEVEL_NAMES = { r: 'Regional', m: 'Municipal', i: 'Indigenous' } as const;
-
-// Province map files are static and large: fetch each once per page load
-const cache = new Map<string, Promise<ProvinceTopology>>();
-function loadMap(code: string): Promise<ProvinceTopology> {
-  let request = cache.get(code);
-  if (!request) {
-    request = fetch(`/maps/${code}.json`).then((res) => {
-      if (!res.ok) throw new Error(`Map not available (${res.status})`);
-      return res.json() as Promise<ProvinceTopology>;
-    });
-    request.catch(() => cache.delete(code));
-    cache.set(code, request);
-  }
-  return request;
-}
 
 interface ProvinceMapProps {
   provinceCode: string;
@@ -75,7 +47,7 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
     let active = true;
     setTopo(null);
     setError(null);
-    loadMap(provinceCode)
+    loadProvinceMap(provinceCode)
       .then((data) => {
         if (!active) return;
         setTopo(data);
@@ -259,9 +231,9 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
               aria-pressed={layer === value}
               onClick={() => setLayer(value)}
               disabled={value === 'regions' && topo !== null && counts.regions === 0}
-              className={`border px-2.5 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-black disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`border px-2.5 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40 ${
                 layer === value
-                  ? 'border-black bg-black text-white'
+                  ? 'border-accent bg-accent text-white'
                   : 'border-gray-400 hover:bg-gray-100'
               }`}
             >
@@ -281,7 +253,7 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
               onClick={onClick}
               aria-label={label}
               title={label}
-              className="border border-gray-400 p-1.5 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+              className="border border-gray-400 p-1.5 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Icon className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -320,8 +292,8 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
                         ? '#F2F2F2'
                         : isSelected
                           ? isHover
-                            ? 'rgba(0, 0, 0, 0.5)'
-                            : 'rgba(0, 0, 0, 0.3)'
+                            ? 'rgba(10, 54, 120, 0.5)'
+                            : 'rgba(10, 54, 120, 0.3)'
                           : isHover
                             ? '#D6D6D6'
                             : '#FFFFFF'
@@ -370,7 +342,7 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
 
         {hover && (
           <div
-            className="pointer-events-none absolute z-10 whitespace-nowrap bg-black px-2 py-1 text-xs text-white"
+            className="pointer-events-none absolute z-10 whitespace-nowrap bg-accent px-2 py-1 text-xs text-white"
             style={{ left: hover.x, top: hover.y - 12, transform: 'translate(-50%, -100%)' }}
             aria-hidden="true"
           >

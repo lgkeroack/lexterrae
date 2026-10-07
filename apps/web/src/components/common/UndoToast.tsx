@@ -35,7 +35,7 @@ export function UndoToast() {
         type="button"
         onClick={() => void undo()}
         disabled={isUndoing}
-        className="flex-shrink-0 border border-black px-3 py-1 font-semibold hover:bg-black hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black disabled:opacity-50"
+        className="flex-shrink-0 border border-black px-3 py-1 font-semibold hover:bg-accent hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
       >
         {isUndoing ? 'Undoing…' : error ? 'Try again' : 'Undo'}
       </button>
@@ -43,7 +43,7 @@ export function UndoToast() {
         type="button"
         onClick={dismiss}
         aria-label="Dismiss"
-        className="flex-shrink-0 p-1 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+        className="flex-shrink-0 p-1 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <X className="h-4 w-4" aria-hidden="true" />
       </button>

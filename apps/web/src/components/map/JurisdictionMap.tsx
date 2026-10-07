@@ -9,8 +9,8 @@ import { PROVINCE_MAP_DATA, MAP_VIEWBOX } from '../../data/map-paths';
 const COLORS = {
   unselected: '#FFFFFF',
   hover: '#D6D6D6',
-  selected: 'rgba(0, 0, 0, 0.4)',
-  partial: 'rgba(0, 0, 0, 0.15)',
+  selected: 'rgba(10, 54, 120, 0.4)',
+  partial: 'rgba(10, 54, 120, 0.15)',
   stroke: '#000000',
   strokeSelected: '#000000',
   focus: '#000000',
@@ -48,7 +48,7 @@ function TriStateCheckbox({
       checked={state === 'selected'}
       aria-checked={state === 'partial' ? 'mixed' : state === 'selected'}
       onChange={onChange}
-      className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+      className="h-4 w-4 flex-shrink-0 rounded border-gray-300 text-blue-600 focus:ring-accent"
     />
   );
 }
@@ -213,9 +213,9 @@ export function JurisdictionMap() {
             type="button"
             aria-pressed={clickMode === mode}
             onClick={() => setClickMode(mode)}
-            className={`border px-2.5 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-black ${
+            className={`border px-2.5 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
               clickMode === mode
-                ? 'border-black bg-black text-white'
+                ? 'border-accent bg-accent text-white'
                 : 'border-gray-400 hover:bg-gray-100'
             }`}
           >
@@ -399,7 +399,7 @@ export function JurisdictionMap() {
               <li
                 key={p.code}
                 className={`flex items-center gap-2 rounded-md px-2 py-1.5 ${
-                  state !== 'none' ? 'bg-blue-50' : 'hover:bg-gray-50'
+                  state !== 'none' ? 'bg-accent-50' : 'hover:bg-gray-50'
                 }`}
               >
                 <TriStateCheckbox
@@ -420,7 +420,7 @@ export function JurisdictionMap() {
                   type="button"
                   onClick={() => setActiveProvince(p.code)}
                   aria-label={`Browse regions, municipalities and Indigenous lands in ${p.name}${muniCount ? ` (${muniCount} selected)` : ''}`}
-                  className="inline-flex flex-shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="inline-flex flex-shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs font-medium text-blue-700 hover:bg-accent-100 focus:outline-none focus:ring-2 focus:ring-accent"
                 >
                   Browse{muniCount > 0 ? ` (${muniCount})` : ''}
                   <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />

@@ -1,4 +1,4 @@
-const DEFAULT_ROUTE = '/documents';
+const DEFAULT_ROUTE = '/';
 const AUTH_ROUTES = ['/login', '/register'];
 
 interface FromState {
@@ -7,7 +7,7 @@ interface FromState {
 
 /**
  * Where to send the user after login/registration: the protected route they
- * originally requested (stored by AuthGuard in location.state), else /documents.
+ * originally requested (stored by AuthGuard in location.state), else the home page.
  */
 export function getRedirectTarget(state: unknown): string {
   const from = (state as FromState | null)?.from;

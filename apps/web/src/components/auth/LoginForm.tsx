@@ -114,7 +114,7 @@ export function LoginForm() {
         <Link
           to="/register"
           state={location.state}
-          className="rounded font-medium text-blue-700 hover:text-blue-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="rounded font-medium text-blue-700 hover:text-blue-900 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           Create one
         </Link>

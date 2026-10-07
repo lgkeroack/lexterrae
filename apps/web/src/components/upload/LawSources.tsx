@@ -15,7 +15,7 @@ function SourceLink({ source }: { source: LawSource }) {
       href={source.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-baseline gap-1 underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+      className="inline-flex items-baseline gap-1 underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       {source.label}
       <ExternalLink className="h-3 w-3 flex-shrink-0 self-center" aria-hidden="true" />

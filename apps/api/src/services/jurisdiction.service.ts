@@ -77,10 +77,14 @@ interface Indexed extends Row {
 
 class JurisdictionIndex {
   readonly byId = new Map<string, Indexed>();
+  readonly byCode = new Map<string, Indexed>();
   readonly children = new Map<string, Indexed[]>();
 
   constructor(readonly rows: Indexed[]) {
-    for (const r of rows) this.byId.set(r.id, r);
+    for (const r of rows) {
+      this.byId.set(r.id, r);
+      this.byCode.set(r.code, r);
+    }
     for (const r of rows) {
       if (r.parentId) this.children.set(r.parentId, [...(this.children.get(r.parentId) ?? []), r]);
     }
@@ -492,6 +496,31 @@ function rootOf(visible: VisibleJurisdictions, row: Row): string[] {
     current = parent;
   }
   return [];
+}
+
+/**
+ * The first official jurisdiction found among these codes, tried in order. Used to turn a map
+ * location (most specific area first: municipality, region, province) into a jurisdiction.
+ */
+export async function findByCodes(
+  deps: Deps,
+  codes: string[],
+): Promise<JurisdictionSearchResult | null> {
+  const visible = await visibleTo(deps, undefined);
+  for (const code of codes) {
+    const row = visible.official.byCode.get(code);
+    if (row) return visible.toResult(row);
+  }
+  return null;
+}
+
+/** Official jurisdictions by ID, with their paths (unknown IDs are left out). */
+export async function findByIds(deps: Deps, ids: string[]): Promise<JurisdictionSearchResult[]> {
+  const visible = await visibleTo(deps, undefined);
+  return ids.flatMap((id) => {
+    const row = visible.official.byId.get(id);
+    return row ? [visible.toResult(row)] : [];
+  });
 }
 
 /** Ancestors (broadest first, without Canada) of each jurisdiction, for display. */

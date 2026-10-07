@@ -127,7 +127,7 @@ function JurisdictionBadges({ doc, max = 3 }: { doc: DocumentWithJurisdictions; 
 }
 
 const selectClass =
-  'rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  'rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent';
 
 export function DocumentList() {
   const location = useLocation();
@@ -327,7 +327,7 @@ export function DocumentList() {
         <button
           type="button"
           onClick={() => handleSort(field)}
-          className="inline-flex items-center gap-1 rounded hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+          className="inline-flex items-center gap-1 rounded hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
           {label}
           <Icon
@@ -381,13 +381,13 @@ export function DocumentList() {
               maxLength={MAX_SEARCH_LENGTH}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Search title, description, tags..."
-              className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-9 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 md:w-72 [&::-webkit-search-cancel-button]:hidden"
+              className="w-full rounded-md border border-gray-300 py-2 pl-9 pr-9 text-sm placeholder:text-gray-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent md:w-72 [&::-webkit-search-cancel-button]:hidden"
             />
             {searchInput && (
               <button
                 type="button"
                 onClick={clearSearch}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 aria-label="Clear search"
               >
                 <X className="h-4 w-4" />
@@ -462,7 +462,7 @@ export function DocumentList() {
 
       {/* Bulk actions */}
       {selectedIds.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-md bg-blue-50 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-3 rounded-md bg-accent-50 px-4 py-2">
           <span className="text-sm font-medium text-blue-800">{selectedIds.size} selected</span>
           <Button variant="danger" size="sm" onClick={() => setShowBulkDelete(true)}>
             <Trash2 className="h-3.5 w-3.5" />
@@ -562,7 +562,7 @@ export function DocumentList() {
               </p>
               <Link
                 to="/upload"
-                className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
               >
                 <Upload className="h-4 w-4" aria-hidden="true" />
                 Upload document
@@ -586,7 +586,7 @@ export function DocumentList() {
               <li
                 key={doc.id}
                 className={`rounded-lg border bg-white p-3 ${
-                  selectedIds.has(doc.id) ? 'border-blue-300 bg-blue-50' : 'border-gray-200'
+                  selectedIds.has(doc.id) ? 'border-accent-300 bg-accent-50' : 'border-gray-200'
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -604,7 +604,7 @@ export function DocumentList() {
                         to={`/documents/${doc.id}`}
                         state={linkState}
                         title={doc.title}
-                        className="line-clamp-2 break-words font-medium text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="line-clamp-2 break-words font-medium text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {doc.title}
                       </Link>
@@ -621,7 +621,7 @@ export function DocumentList() {
                   <button
                     type="button"
                     onClick={() => downloadDocument(doc.id, doc.originalFilename)}
-                    className="flex-shrink-0 rounded p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    className="flex-shrink-0 rounded p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     aria-label={`Download ${doc.title}`}
                     title="Download"
                   >
@@ -679,7 +679,7 @@ export function DocumentList() {
                   <tr
                     key={doc.id}
                     className={`border-b border-gray-100 transition-colors last:border-b-0 hover:bg-gray-50 ${
-                      selectedIds.has(doc.id) ? 'bg-blue-50' : ''
+                      selectedIds.has(doc.id) ? 'bg-accent-50' : ''
                     }`}
                   >
                     <td className="px-4 py-3">
@@ -696,7 +696,7 @@ export function DocumentList() {
                         to={`/documents/${doc.id}`}
                         state={linkState}
                         title={doc.title}
-                        className="block truncate font-medium text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="block truncate font-medium text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                       >
                         {doc.title}
                       </Link>
@@ -725,7 +725,7 @@ export function DocumentList() {
                       <button
                         type="button"
                         onClick={() => downloadDocument(doc.id, doc.originalFilename)}
-                        className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Download ${doc.title}`}
                         title="Download"
                       >
@@ -805,7 +805,7 @@ export function DocumentList() {
                       aria-current={page === pagination.page ? 'page' : undefined}
                       className={`h-8 min-w-[32px] rounded-md px-2 text-sm ${
                         page === pagination.page
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-accent text-white'
                           : 'text-gray-700 hover:bg-gray-100'
                       }`}
                     >

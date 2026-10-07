@@ -1,5 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { FileSizeError, ValidationError } from '../lib/errors.js';
+import { requireBackendAccess } from '../middleware/access.js';
 import { authenticate } from '../middleware/auth.js';
 import { generalLimiter, searchLimiter, uploadLimiter } from '../middleware/rate-limit.js';
 import {
@@ -9,6 +10,7 @@ import {
   validParams,
   validQuery,
 } from '../middleware/validate.js';
+import { fileResponse } from '../lib/download.js';
 import * as documents from '../services/document.service.js';
 import type { AppEnv } from '../types.js';
 import {
@@ -21,7 +23,8 @@ import {
 const router = new Hono<AppEnv>();
 
 // All document routes require authentication; limits then apply per user
-router.use('*', authenticate, generalLimiter);
+// The backend: only users an admin has authorized (see routes/access.ts)
+router.use('*', authenticate, generalLimiter, requireBackendAccess);
 
 /**
  * Caps the upload size (1 MB of headroom for the other form fields). Browsers send Content-Length,
@@ -136,17 +139,7 @@ router.get('/:id/download', async (c) => {
   const { id } = validParams(c, documentParamsSchema);
   const file = await documents.downloadDocument(c.get('deps'), id, c.get('userId'));
 
-  // ASCII fallback plus RFC 5987 UTF-8 filename so non-ASCII names survive intact
-  const asciiName = file.filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
-  return c.body(file.body, 200, {
-    'Content-Type': file.contentType,
-    'Content-Length': String(file.contentLength),
-    // SECURITY: force download; never let the browser render uploaded content in our origin
-    'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-    'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'none'",
-    'Cache-Control': 'no-store',
-  });
+  return fileResponse(c, file);
 });
 
 export default router;

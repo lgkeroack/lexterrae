@@ -39,7 +39,7 @@ const LEVEL_HINTS: Record<JurisdictionLevel, string> = {
 };
 
 const selectClass =
-  'block w-full rounded-md border border-gray-500 bg-white px-3 py-2 text-sm text-black focus:border-black focus:outline-none focus:ring-2 focus:ring-black';
+  'block w-full rounded-md border border-gray-500 bg-white px-3 py-2 text-sm text-black focus:border-black focus:outline-none focus:ring-2 focus:ring-accent';
 
 /** Adds a jurisdiction missing from the official list. Only the user who adds it can see it. */
 export function AddJurisdictionDialog({

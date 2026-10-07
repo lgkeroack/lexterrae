@@ -15,7 +15,9 @@ export type AuditAction =
   | 'user.login'
   | 'user.login_failed'
   | 'user.password_change'
-  | 'user.account_delete';
+  | 'user.account_delete'
+  | 'access.grant'
+  | 'access.revoke';
 
 export interface AuditLogEntry {
   id: string;

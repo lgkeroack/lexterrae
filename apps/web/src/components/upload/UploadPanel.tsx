@@ -485,7 +485,7 @@ export function UploadPanel() {
             {uploaded.id && (
               <Link
                 to={`/documents/${uploaded.id}`}
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
               >
                 View document
               </Link>
@@ -495,7 +495,7 @@ export function UploadPanel() {
             </Button>
             <Link
               to="/documents"
-              className="inline-flex items-center justify-center px-4 py-2 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+              className="inline-flex items-center justify-center px-4 py-2 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               Back to documents
             </Link>
@@ -543,7 +543,7 @@ export function UploadPanel() {
               type="button"
               onClick={openFilePicker}
               disabled={isBusy}
-              className="rounded-md px-2 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md px-2 py-1 text-sm font-medium text-blue-700 hover:bg-accent-100 focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               Change
             </button>
@@ -552,7 +552,7 @@ export function UploadPanel() {
               onClick={removeFile}
               disabled={isBusy}
               aria-label={`Remove ${file.name}`}
-              className="rounded-md p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -573,9 +573,9 @@ export function UploadPanel() {
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`cursor-pointer rounded-lg border-2 border-dashed p-6 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:p-8 ${
+            className={`cursor-pointer rounded-lg border-2 border-dashed p-6 text-center transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 sm:p-8 ${
               isDragOver
-                ? 'border-blue-500 bg-blue-50'
+                ? 'border-accent bg-accent-50'
                 : fileError
                   ? 'border-red-300 bg-red-50/40 hover:bg-red-50'
                   : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
@@ -659,7 +659,7 @@ export function UploadPanel() {
             rows={3}
             disabled={isBusy}
             aria-describedby="upload-description-count"
-            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50"
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:bg-gray-50"
           />
           <p id="upload-description-count" className="mt-1 text-right text-xs text-gray-400">
             {description.length}/{MAX_DESCRIPTION_LENGTH}
@@ -760,7 +760,7 @@ export function UploadPanel() {
             aria-valuenow={progress}
           >
             <div
-              className={`h-full rounded-full bg-blue-600 transition-all duration-300 ${status === 'processing' ? 'animate-pulse' : ''}`}
+              className={`h-full rounded-full bg-accent transition-all duration-300 ${status === 'processing' ? 'animate-pulse' : ''}`}
               style={{ width: `${progress}%` }}
             />
           </div>

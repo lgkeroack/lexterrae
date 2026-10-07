@@ -18,6 +18,8 @@ export interface Bindings {
   GOOGLE_CLIENT_ID?: string;
   /** Optional secret: Google OAuth client secret (`wrangler secret put GOOGLE_CLIENT_SECRET`) */
   GOOGLE_CLIENT_SECRET?: string;
+  /** Granted admin access on sign-in while no admin exists (wrangler.jsonc var) */
+  BOOTSTRAP_ADMIN_EMAIL?: string;
   /** Local development only: host:port of the docker-compose Neon proxy */
   NEON_LOCAL_PROXY?: string;
 }
@@ -40,6 +42,7 @@ const configSchema = z.object({
   MAX_FILE_SIZE_MB: z.coerce.number().int().min(1).max(100).default(50),
   GOOGLE_CLIENT_ID: z.string().trim().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().trim().min(1).optional(),
+  BOOTSTRAP_ADMIN_EMAIL: z.string().trim().toLowerCase().email().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;

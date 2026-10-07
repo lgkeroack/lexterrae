@@ -80,7 +80,7 @@ export function JurisdictionSearch() {
           }}
           placeholder="City, county, regional district, First Nation… e.g. Peel, Saint-Jérôme, Musqueam"
           aria-describedby={`${resultsId}-status`}
-          className="w-full border border-gray-500 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black"
+          className="w-full border border-gray-500 bg-white py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-accent"
         />
       </div>
 
@@ -113,12 +113,12 @@ export function JurisdictionSearch() {
                       onClick={() => toggleJurisdiction(r)}
                       disabled={included}
                       aria-pressed={selected || included}
-                      className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2 text-left hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black disabled:cursor-not-allowed disabled:hover:bg-white"
+                      className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2 text-left hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent disabled:cursor-not-allowed disabled:hover:bg-white"
                     >
                       <span
                         className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center border ${
                           selected || included
-                            ? 'border-black bg-black text-white'
+                            ? 'border-accent bg-accent text-white'
                             : 'border-gray-500'
                         }`}
                         aria-hidden="true"
@@ -148,7 +148,7 @@ export function JurisdictionSearch() {
                         type="button"
                         onClick={() => void removeCustom(r)}
                         aria-label={`Delete ${r.name} (added by you)`}
-                        className="flex-shrink-0 border-l border-gray-200 px-3 text-xs hover:bg-black hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black"
+                        className="flex-shrink-0 border-l border-gray-200 px-3 text-xs hover:bg-accent hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
                       >
                         Delete
                       </button>
@@ -162,7 +162,7 @@ export function JurisdictionSearch() {
             <button
               type="button"
               onClick={() => setIsAdding(true)}
-              className="inline-flex items-center gap-1 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+              className="inline-flex items-center gap-1 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Can&apos;t find it? Add “{debounced}” as a new jurisdiction

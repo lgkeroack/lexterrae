@@ -9,6 +9,7 @@ interface __BaseEnv_Env {
 	JWT_EXPIRY: "15m";
 	JWT_REFRESH_EXPIRY: "7d";
 	MAX_FILE_SIZE_MB: "50";
+	BOOTSTRAP_ADMIN_EMAIL: "lgkeroack@lgkeroack.com";
 	ENVIRONMENT: string;
 	JWT_SECRET: string;
 	DATABASE_URL: string;
@@ -22,7 +23,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "JWT_EXPIRY" | "JWT_REFRESH_EXPIRY" | "MAX_FILE_SIZE_MB" | "ENVIRONMENT" | "JWT_SECRET" | "DATABASE_URL" | "NEON_LOCAL_PROXY">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "JWT_EXPIRY" | "JWT_REFRESH_EXPIRY" | "MAX_FILE_SIZE_MB" | "BOOTSTRAP_ADMIN_EMAIL" | "ENVIRONMENT" | "JWT_SECRET" | "DATABASE_URL" | "NEON_LOCAL_PROXY">> {}
 }
 
 // Begin runtime types

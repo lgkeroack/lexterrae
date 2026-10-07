@@ -1,10 +1,12 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { JURISDICTION_LEVELS, type JurisdictionLevel } from '@lexterrae/shared';
+import { requireBackendAccess } from '../middleware/access.js';
 import { authenticate, optionalAuthenticate } from '../middleware/auth.js';
 import { generalLimiter } from '../middleware/rate-limit.js';
 import { validJson, validParams, validQuery } from '../middleware/validate.js';
 import * as jurisdictions from '../services/jurisdiction.service.js';
+import { NotFoundError } from '../lib/errors.js';
 import type { AppEnv } from '../types.js';
 
 const router = new Hono<AppEnv>();
@@ -83,15 +85,38 @@ router.get('/search', optionalAuthenticate, async (c) => {
   return c.json({ data }, 200);
 });
 
+const locateSchema = z.object({
+  codes: z
+    .string({ required_error: 'codes is required' })
+    .transform((v) =>
+      v
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().max(100)).min(1, 'Give at least one code').max(10)),
+});
+
+/**
+ * GET /api/jurisdictions/locate?codes=BC-SQUAMISH,BC-SQUAMISH_LILLOOET,BC — the first official
+ * jurisdiction among these map area codes (most specific first), for "use my location".
+ */
+router.get('/locate', async (c) => {
+  const { codes } = validQuery(c, locateSchema);
+  const data = await jurisdictions.findByCodes(c.get('deps'), codes);
+  if (!data) throw new NotFoundError('No jurisdiction matches that location');
+  return c.json({ data }, 200);
+});
+
 /** POST /api/jurisdictions — add a jurisdiction (visible only to the signed-in user). */
-router.post('/', authenticate, async (c) => {
+router.post('/', authenticate, requireBackendAccess, async (c) => {
   const input = await validJson(c, createSchema);
   const data = await jurisdictions.createJurisdiction(c.get('deps'), c.get('userId'), input);
   return c.json({ data }, 201);
 });
 
 /** DELETE /api/jurisdictions/:id — delete a jurisdiction the user added (if unused). */
-router.delete('/:id', authenticate, async (c) => {
+router.delete('/:id', authenticate, requireBackendAccess, async (c) => {
   const { id } = validParams(c, paramsSchema);
   await jurisdictions.deleteCustomJurisdiction(c.get('deps'), c.get('userId'), id);
   return c.body(null, 204);
