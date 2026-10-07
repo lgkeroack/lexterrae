@@ -81,8 +81,12 @@ export async function listLibrary(deps: Deps, query: LibraryQuery) {
   };
 }
 
-/** Downloads a document from the library (any signed-in user). */
-export async function downloadLibraryDocument(deps: Deps, viewerId: string, documentId: string) {
+/** Downloads a document from the library (open to the public; viewerId when signed in). */
+export async function downloadLibraryDocument(
+  deps: Deps,
+  viewerId: string | null,
+  documentId: string,
+) {
   const [doc] = (await deps.sql`
     SELECT file_key AS "fileKey", original_filename AS "originalFilename" FROM documents
     WHERE id = ${documentId} AND deleted_at IS NULL`) as {

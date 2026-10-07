@@ -24,6 +24,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
+  // The public start at user facing; the backend's sign-in is linked from its header
+  if (status === 'unauthenticated' && location.pathname === '/') {
+    return <Navigate to="/user-facing" replace />;
+  }
+
   if (status === 'unauthenticated') {
     // Remember where the user was headed so login can send them back.
     return <Navigate to="/login" replace state={{ from: location }} />;

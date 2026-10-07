@@ -10,6 +10,7 @@ import {
 import { api, getErrorMessage } from '../services/api';
 import { codesAt } from '../data/locate';
 import { useAccessStore } from '../stores/accessStore';
+import { useAuthStore } from '../stores/authStore';
 import { describePath } from '../stores/jurisdictionStore';
 import { useDebounce } from '../hooks/useDebounce';
 import { formatFileSize } from '../utils/format';
@@ -28,9 +29,10 @@ const PAGE_SIZE = 50;
 export function UserFacingPage() {
   useDocumentTitle('User facing');
   const { role, status, load } = useAccessStore();
+  const isSignedIn = useAuthStore((s) => s.status === 'authenticated');
   useEffect(() => {
-    if (status === 'idle') void load();
-  }, [status, load]);
+    if (isSignedIn && status === 'idle') void load();
+  }, [isSignedIn, status, load]);
 
   const [params, setParams] = useSearchParams();
   const placeParam = params.get('place');
@@ -44,7 +46,7 @@ export function UserFacingPage() {
       <SiteHeader />
       <main id="main-content" className="mx-auto max-w-4xl px-4 py-10 sm:py-12">
         {/* Home is only for users with backend access; everyone else starts here */}
-        {role && (
+        {isSignedIn && role && (
           <Link
             to="/"
             className="mb-6 inline-flex items-center gap-1.5 text-sm underline underline-offset-4 hover:no-underline"
