@@ -77,7 +77,7 @@ export function CaseFilter({ caseIn, isActive, onChange }: CaseFilterProps) {
         className="inline-flex items-center gap-1.5 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
       >
         <Scale className="h-4 w-4" aria-hidden="true" />
-        What applies to a case in…?
+        What applies in…?
       </button>
     );
   }
