@@ -31,6 +31,8 @@ export interface PackageDocument {
   uploadedAt: string;
   updatedAt: string;
   contentText: string | null;
+  /** True while the file's text hasn't been read yet (as opposed to being unreadable). */
+  textPending?: boolean;
   jurisdictions: PackageJurisdiction[];
 }
 
@@ -187,7 +189,7 @@ export function buildPackage(
     );
     if (!doc.contentText) {
       out.push(
-        `Text not included: the text of this ${doc.fileType.toUpperCase()} file could not be read. Only the details above are known about ${id}.`,
+        `Text not included: the text of this ${doc.fileType.toUpperCase()} file ${doc.textPending ? 'is still being read and will be in packages downloaded later' : 'could not be read (for example a scan or image)'}. Only the details above are known about ${id}.`,
         '',
       );
       return;

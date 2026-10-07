@@ -97,6 +97,7 @@ export async function buildLibraryPackage(deps: Deps, jurisdictionId: string, no
   const rows = (await deps.sql.query(
     `SELECT d.id, d.title, d.description, d.tags, d.file_type AS "fileType",
        d.original_filename AS "originalFilename", d.content_text AS "contentText",
+       (d.content_text IS NULL AND d.text_checked_at IS NULL) AS "textPending",
        d.uploaded_at AS "uploadedAt", d.updated_at AS "updatedAt",
        COALESCE((
          SELECT json_agg(json_build_object('id', j.id, 'name', j.name, 'level', j.level)

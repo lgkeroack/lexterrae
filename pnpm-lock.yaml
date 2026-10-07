@@ -19,6 +19,9 @@ importers:
       bcryptjs:
         specifier: ^3.0.2
         version: 3.0.3
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       file-type:
         specifier: ^19.6.0
         version: 19.6.0
@@ -1546,6 +1549,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
 
   file-type@19.6.0:
     resolution: {integrity: sha512-VZR5I7k5wkD0HgFnMsq5hOsSc710MJMu5Nc5QYsbe38NN5iPV/XTObYLc/cpttRTf6lX538+5uO1ZQRhYibiZQ==}
@@ -3402,6 +3408,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:
       picomatch: 4.0.3
+
+  fflate@0.8.3: {}
 
   file-type@19.6.0:
     dependencies:

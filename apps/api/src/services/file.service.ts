@@ -1,5 +1,6 @@
 import { fileTypeFromBuffer } from 'file-type';
 import { getDocumentProxy } from 'unpdf';
+import { extractDocx, extractRtf, extractXlsx } from '../lib/extract.js';
 import { ALLOWED_EXTENSIONS } from '@lexterrae/shared';
 import {
   FileTypeError,
@@ -226,6 +227,48 @@ export async function extractPdfText(deps: Deps, file: Blob): Promise<string | n
     return null;
   } finally {
     await pdf?.loadingTask.destroy().catch(() => undefined);
+  }
+}
+
+/** Word, Excel and RTF files larger than this are stored but not read for text. */
+const OFFICE_EXTRACTION_MAX_BYTES = 20 * 1024 * 1024;
+
+const OFFICE_EXTRACTORS: Record<string, (bytes: Uint8Array) => string> = {
+  docx: extractDocx,
+  xlsx: extractXlsx,
+  rtf: extractRtf,
+};
+
+/** File types whose text is extracted after upload (see extractText). */
+export const EXTRACTABLE_TYPES = ['pdf', ...Object.keys(OFFICE_EXTRACTORS)];
+
+/**
+ * Extracts searchable text from a PDF, Word (.docx), Excel (.xlsx) or RTF file. Never throws:
+ * unreadable files (scanned or image-only PDFs, damaged or oversized files) yield null.
+ */
+export async function extractText(
+  deps: Deps,
+  file: Blob,
+  fileType: string,
+): Promise<string | null> {
+  if (fileType === 'pdf') return extractPdfText(deps, file);
+  const extractor = OFFICE_EXTRACTORS[fileType];
+  if (!extractor) return null;
+  if (file.size > OFFICE_EXTRACTION_MAX_BYTES) {
+    deps.log.info({
+      module: 'file',
+      message: 'File too large for text extraction',
+      fileType,
+      size: file.size,
+    });
+    return null;
+  }
+  try {
+    const text = sanitizeExtractedText(extractor(new Uint8Array(await file.arrayBuffer())));
+    return text.slice(0, MAX_EXTRACTED_TEXT_CHARS) || null;
+  } catch (err) {
+    deps.log.warn({ module: 'file', message: 'Failed to extract text', fileType, error: err });
+    return null;
   }
 }
 
