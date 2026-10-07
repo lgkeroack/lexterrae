@@ -4,7 +4,8 @@ import {
   clearJurisdictionCache,
   createJurisdiction,
   deleteCustomJurisdiction,
-  getInheritedIds,
+  getPaths,
+  getSelfAndAncestorIds,
   getDescendants,
   getSelfAndDescendantIds,
   normalizeName,
@@ -242,16 +243,38 @@ describe('deleteCustomJurisdiction', () => {
   });
 });
 
-describe('getInheritedIds', () => {
-  it('adds the province and Canada above a smaller jurisdiction', async () => {
+describe('getSelfAndAncestorIds (what applies to a case in a place)', () => {
+  it('a case in a municipality gets it, its region, its province and Canada', async () => {
     const { deps } = fakeDeps();
-    // Mississauga sits in Peel (regional) in Ontario: regions are not inherited, Ontario and Canada are
-    expect((await getInheritedIds(deps, ['mississauga'])).sort()).toEqual(['ca', 'on']);
+    expect((await getSelfAndAncestorIds(deps, 'mississauga')).sort()).toEqual(
+      ['ca', 'mississauga', 'on', 'peel'].sort(),
+    );
   });
 
-  it('does not mark directly picked jurisdictions as inherited', async () => {
+  it('a case in a province gets the province and Canada, nothing inside it', async () => {
     const { deps } = fakeDeps();
-    expect(await getInheritedIds(deps, ['mississauga', 'on'])).toEqual(['ca']);
-    expect(await getInheritedIds(deps, ['ca'])).toEqual([]);
+    expect((await getSelfAndAncestorIds(deps, 'on')).sort()).toEqual(['ca', 'on']);
+  });
+
+  it('a case in another province gets only Canada from above', async () => {
+    const { deps } = fakeDeps();
+    const forQuebec = await getSelfAndAncestorIds(deps, 'qc');
+    expect(forQuebec.sort()).toEqual(['ca', 'qc']);
+    expect(forQuebec).not.toContain('on');
+    expect(forQuebec).not.toContain('mississauga');
+  });
+
+  it('rejects unknown or invisible jurisdictions', async () => {
+    const { deps } = fakeDeps([row('theirs', 'Theirs', 'regional', 'on', null, 'u2')]);
+    await expect(getSelfAndAncestorIds(deps, 'theirs', 'u1')).rejects.toThrow(/not found/);
+  });
+});
+
+describe('getPaths', () => {
+  it("lists each jurisdiction's ancestors, broadest first, without Canada", async () => {
+    const { deps } = fakeDeps();
+    const paths = await getPaths(deps, ['mississauga', 'on']);
+    expect(paths.get('mississauga')?.map((p) => p.name)).toEqual(['Ontario', 'Peel']);
+    expect(paths.get('on')).toEqual([]);
   });
 });

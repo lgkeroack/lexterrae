@@ -87,46 +87,6 @@ export function describePath(item: JurisdictionSearchResult): string {
     .join(', ');
 }
 
-/** A province/territory or Canada that a smaller selection implies (Toronto → Ontario, Canada). */
-export interface InheritedJurisdiction {
-  id: string;
-  name: string;
-  level: JurisdictionLevel;
-  /** Names of the selections it is inherited from. */
-  from: string[];
-}
-
-/**
- * The jurisdictions a document inherits from the selected ones: the province or territory each
- * sits in, and Canada. The server stores the same set (as inherited tags) on upload.
- */
-export function inheritedJurisdictions(
-  selections: JurisdictionSelection[],
-  provinces: ProvinceInfo[],
-): InheritedJurisdiction[] {
-  const direct = new Set(selections.map((s) => s.id));
-  const fromByProvince = new Map<string, string[]>();
-  for (const s of selections) {
-    if (s.parentCode && !direct.has(s.parentCode)) {
-      fromByProvince.set(s.parentCode, [...(fromByProvince.get(s.parentCode) ?? []), s.name]);
-    }
-  }
-  const result: InheritedJurisdiction[] = [...fromByProvince].map(([code, from]) => {
-    const province = provinces.find((p) => p.code === code);
-    return { id: code, name: province?.name ?? code, level: province?.level ?? 'provincial', from };
-  });
-  const belowFederal = selections.filter((s) => s.level !== 'federal');
-  if (!direct.has(FEDERAL_CODE) && belowFederal.length > 0) {
-    result.unshift({
-      id: FEDERAL_CODE,
-      name: 'Canada (federal)',
-      level: 'federal',
-      from: belowFederal.map((s) => s.name),
-    });
-  }
-  return result;
-}
-
 function selectionFrom(item: JurisdictionSearchResult): JurisdictionSelection {
   const province = provinceOf(item);
   return {

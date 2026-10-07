@@ -26,6 +26,7 @@ import type {
 } from '@lexterrae/shared';
 import { JURISDICTION_LEVELS, JURISDICTION_LEVEL_LABELS } from '@lexterrae/shared';
 import { Badge } from '../common/Badge';
+import { CaseFilter } from './CaseFilter';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -61,7 +62,7 @@ const MAX_SEARCH_LENGTH = 200;
 function parseParams(
   sp: URLSearchParams,
 ): Required<Pick<DocumentQueryParams, 'page' | 'pageSize' | 'sortBy' | 'sortOrder'>> &
-  Pick<DocumentQueryParams, 'search' | 'jurisdictionLevel' | 'fileType'> {
+  Pick<DocumentQueryParams, 'search' | 'jurisdictionLevel' | 'fileType' | 'appliesTo'> {
   const page = Number.parseInt(sp.get('page') ?? '', 10);
   const pageSize = Number.parseInt(sp.get('pageSize') ?? '', 10);
   const sortBy = sp.get('sortBy') as SortField | null;
@@ -69,6 +70,7 @@ function parseParams(
   const level = sp.get('jurisdictionLevel') as JurisdictionLevel | null;
   const fileType = sp.get('fileType') as FileType | null;
   const search = (sp.get('search') ?? '').trim().slice(0, MAX_SEARCH_LENGTH);
+  const appliesTo = sp.get('appliesTo') ?? '';
   return {
     page: Number.isFinite(page) && page >= 1 ? page : 1,
     pageSize: PAGE_SIZES.includes(pageSize) ? pageSize : DEFAULT_PAGE_SIZE,
@@ -77,13 +79,22 @@ function parseParams(
     search: search || undefined,
     jurisdictionLevel: level && LEVELS.includes(level) ? level : undefined,
     fileType: fileType && FILE_TYPES.includes(fileType) ? fileType : undefined,
+    appliesTo: UUID_RE.test(appliesTo) ? appliesTo : undefined,
   };
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function FileIcon({ type }: { type: string }) {
   if (type === 'pdf')
     return <FileText className="h-5 w-5 flex-shrink-0 text-red-500" aria-hidden="true" />;
   return <File className="h-5 w-5 flex-shrink-0 text-blue-500" aria-hidden="true" />;
+}
+
+/** "Squamish (British Columbia › Squamish-Lillooet)" for a badge's tooltip. */
+function describeJurisdiction(j: DocumentWithJurisdictions['jurisdictions'][number]): string {
+  const where = (j.path ?? []).map((p) => p.name).join(' › ');
+  return where ? `${j.name} (${where})` : j.name;
 }
 
 function JurisdictionBadges({ doc, max = 3 }: { doc: DocumentWithJurisdictions; max?: number }) {
@@ -94,7 +105,7 @@ function JurisdictionBadges({ doc, max = 3 }: { doc: DocumentWithJurisdictions; 
   return (
     <div className="flex flex-wrap gap-1">
       {doc.jurisdictions.slice(0, max).map((j) => (
-        <span key={j.id} title={j.inherited ? `${j.name} (inherited)` : j.name}>
+        <span key={j.id} title={describeJurisdiction(j)}>
           {/* Short codes for Canada and the provinces ("ON"); names below that */}
           <Badge
             label={
@@ -103,7 +114,6 @@ function JurisdictionBadges({ doc, max = 3 }: { doc: DocumentWithJurisdictions; 
                 : j.name
             }
             level={j.level}
-            inherited={j.inherited}
           />
         </span>
       ))}
@@ -223,12 +233,21 @@ export function DocumentList() {
     updateParams({ search: null, page: null });
   };
 
-  const hasFilters = Boolean(params.search || params.jurisdictionLevel || params.fileType);
+  const hasFilters = Boolean(
+    params.search || params.jurisdictionLevel || params.fileType || params.appliesTo,
+  );
 
   const clearFilters = () => {
     setSearchInput('');
     lastUrlSearch.current = '';
-    updateParams({ search: null, jurisdictionLevel: null, fileType: null, page: null });
+    updateParams({
+      search: null,
+      jurisdictionLevel: null,
+      fileType: null,
+      appliesTo: null,
+      caseIn: null,
+      page: null,
+    });
   };
 
   const handleSort = (field: SortField) => {
@@ -335,6 +354,15 @@ export function DocumentList() {
 
   return (
     <div className="space-y-4">
+      {/* What applies to a case in a given place */}
+      <CaseFilter
+        isActive={Boolean(params.appliesTo)}
+        caseIn={searchParams.get('caseIn') ?? undefined}
+        onChange={(place) =>
+          updateParams({ appliesTo: place?.id ?? null, caseIn: place?.label ?? null, page: null })
+        }
+      />
+
       {/* Search and filters bar */}
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <form onSubmit={handleSearchSubmit} role="search" className="w-full md:w-auto">

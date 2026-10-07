@@ -151,6 +151,10 @@ export const documentQuerySchema = z
         .optional(),
     ),
     jurisdictionId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+    appliesTo: z.preprocess(
+      emptyToUndefined,
+      z.string().uuid('appliesTo must be a jurisdiction UUID').optional(),
+    ),
     fileType: z.preprocess(
       (v) =>
         typeof v === 'string' ? emptyToUndefined(v.trim().toLowerCase().replace(/^\./, '')) : v,

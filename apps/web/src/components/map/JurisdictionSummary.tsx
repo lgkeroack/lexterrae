@@ -3,7 +3,6 @@ import { X } from 'lucide-react';
 import {
   useJurisdictionStore,
   MAX_JURISDICTION_SELECTIONS,
-  inheritedJurisdictions,
   type JurisdictionSelection,
 } from '../../stores/jurisdictionStore';
 
@@ -48,11 +47,7 @@ function SelectionChip({
 }
 
 export function JurisdictionSummary() {
-  const { selections, provinces, removeSelection, clearAll } = useJurisdictionStore();
-  const inherited = useMemo(
-    () => inheritedJurisdictions(selections, provinces),
-    [selections, provinces],
-  );
+  const { selections, removeSelection, clearAll } = useJurisdictionStore();
 
   const totalCount = selections.length;
   const overLimit = totalCount > MAX_JURISDICTION_SELECTIONS;
@@ -135,32 +130,6 @@ export function JurisdictionSummary() {
                   </ul>
                 </div>
               ),
-          )}
-          {inherited.length > 0 && (
-            <div>
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-gray-500">
-                Inherited
-              </p>
-              <ul className="flex flex-wrap gap-1.5" aria-label="Inherited jurisdictions">
-                {inherited.map((j) => (
-                  <li
-                    key={j.id}
-                    title={`Included because of: ${j.from.join(', ')}`}
-                    className="inline-flex items-center border border-dashed border-gray-500 px-2.5 py-0.5 text-xs text-gray-700"
-                  >
-                    {j.name}
-                    <span className="ml-1 text-gray-500">
-                      · from{' '}
-                      {j.from.length <= 2 ? j.from.join(', ') : `${j.from.length} selections`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-1.5 text-xs text-gray-500">
-                Added automatically: a document for a place also applies in its province or
-                territory and in Canada. Remove the selection to remove these.
-              </p>
-            </div>
           )}
         </div>
       )}

@@ -695,7 +695,10 @@ export function UploadPanel() {
           <p className="mt-1 text-xs text-gray-500">
             Tag where this document applies (up to {MAX_JURISDICTION_SELECTIONS}): federal,
             provinces and territories, regions, municipalities or Indigenous lands. Search by name,
-            browse a province, or add one that isn&apos;t listed.
+            browse a province, or add one that isn&apos;t listed. Tag the jurisdiction the document
+            belongs to: it then applies to cases there and everywhere inside it (a British Columbia
+            statute applies in Squamish; a Squamish by-law does not apply elsewhere in British
+            Columbia).
           </p>
         </div>
 
