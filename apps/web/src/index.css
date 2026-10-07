@@ -26,7 +26,7 @@
   input[type='checkbox'],
   input[type='radio'],
   progress {
-    accent-color: #000;
+    accent-color: #0a3678;
   }
 
   /* Native search "clear" button: monochrome like everything else */
@@ -35,14 +35,14 @@
   }
 
   ::selection {
-    background: #000;
+    background: #0a3678;
     color: #fff;
   }
 
   /* Fallback visible focus indicator for any interactive element that
      doesn't define its own focus-visible styles. */
   :focus-visible {
-    outline: 2px solid #000;
+    outline: 2px solid #0a3678;
     outline-offset: 2px;
   }
 }

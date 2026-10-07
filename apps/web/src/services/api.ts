@@ -16,6 +16,10 @@ import type {
   TopLevelJurisdictions,
   CreateJurisdictionRequest,
   ApiErrorResponse,
+  AuthorizedUser,
+  BackendAccess,
+  BackendRole,
+  GrantAccessRequest,
 } from '@lexterrae/shared';
 
 const BASE_URL = '/api';
@@ -517,5 +521,31 @@ export const api = {
       body: JSON.stringify(input),
     });
     return res.data;
+  },
+
+  /** The signed-in user's backend role (null when not authorized). */
+  async getBackendAccess(): Promise<BackendRole | null> {
+    const res = await request<BackendAccess>('/access');
+    return res.role;
+  },
+
+  /** Everyone with backend access (admins only). */
+  async getAuthorizedUsers(): Promise<AuthorizedUser[]> {
+    const res = await request<{ data: AuthorizedUser[] }>('/access/users');
+    return res.data;
+  },
+
+  /** Authorizes an existing account, or changes its role (admins only). */
+  async grantBackendAccess(input: GrantAccessRequest): Promise<AuthorizedUser> {
+    const res = await request<{ data: AuthorizedUser }>('/access/users', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    return res.data;
+  },
+
+  /** Removes a user's backend access (admins only). */
+  async revokeBackendAccess(userId: string): Promise<void> {
+    await request<void>(`/access/users/${encodeURIComponent(userId)}`, { method: 'DELETE' });
   },
 } as const;

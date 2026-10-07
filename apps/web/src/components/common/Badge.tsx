@@ -10,7 +10,7 @@ interface BadgeProps {
 }
 
 const levelColors: Record<JurisdictionLevel, string> = {
-  federal: 'bg-black text-white border-black',
+  federal: 'bg-accent text-white border-black',
   provincial: 'bg-white text-black border-black',
   territorial: 'bg-white text-black border-black border-dashed',
   regional: 'bg-white text-black border-gray-500',

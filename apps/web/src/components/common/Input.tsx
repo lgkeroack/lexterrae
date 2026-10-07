@@ -54,8 +54,8 @@ export function Input({
             ${endAdornment ? 'pr-10' : ''}
             ${
               error
-                ? 'border-2 border-black text-black focus:ring-black'
-                : 'border-gray-500 text-black focus:border-black focus:ring-black'
+                ? 'border-2 border-black text-black focus:ring-accent'
+                : 'border-gray-500 text-black focus:border-black focus:ring-accent'
             }
             ${className}
           `.trim()}

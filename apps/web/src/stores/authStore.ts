@@ -12,6 +12,7 @@ import {
   syncTokensFromStorage,
   type AuthResponseWithRefresh,
 } from '../services/api';
+import { useAccessStore } from './accessStore';
 import { useDocumentStore } from './documentStore';
 import { useJurisdictionStore } from './jurisdictionStore';
 
@@ -83,6 +84,7 @@ function initialStatus(): AuthStatus {
 function resetUserScopedStores(): void {
   useDocumentStore.setState(useDocumentStore.getInitialState(), true);
   useJurisdictionStore.setState(useJurisdictionStore.getInitialState(), true);
+  useAccessStore.setState(useAccessStore.getInitialState(), true);
 }
 
 // ── Proactive refresh ───────────────────────────────────────────────

@@ -1,9 +1,10 @@
 import React, { Suspense } from 'react';
-import { Routes, Route, Navigate, Link } from 'react-router-dom';
+import { Routes, Route, Link, Outlet } from 'react-router-dom';
 import { FileQuestion, AlertTriangle } from 'lucide-react';
 import { Layout } from './components/Layout';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { AuthGuard } from './components/AuthGuard';
+import { AdminGuard, BackendGuard } from './components/BackendGuard';
 import { useDocumentTitle } from './components/common/useDocumentTitle';
 
 const LoginPage = React.lazy(() =>
@@ -19,6 +20,15 @@ const DocumentBrowserPage = React.lazy(() =>
   import('./pages/DocumentBrowserPage').then((m) => ({
     default: m.DocumentBrowserPage,
   })),
+);
+const HomePage = React.lazy(() =>
+  import('./pages/HomePage').then((m) => ({ default: m.HomePage })),
+);
+const UserFacingPage = React.lazy(() =>
+  import('./pages/UserFacingPage').then((m) => ({ default: m.UserFacingPage })),
+);
+const UsersPage = React.lazy(() =>
+  import('./pages/UsersPage').then((m) => ({ default: m.UsersPage })),
 );
 const UploadPage = React.lazy(() =>
   import('./pages/UploadPage').then((m) => ({ default: m.UploadPage })),
@@ -48,7 +58,7 @@ function NotFoundPage() {
       </p>
       <Link
         to="/documents"
-        className="mt-6 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+        className="mt-6 inline-flex items-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
       >
         Go to documents
       </Link>
@@ -94,7 +104,7 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, Er
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="mt-6 inline-flex items-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="mt-6 inline-flex items-center rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
           >
             Reload page
           </button>
@@ -112,18 +122,32 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/auth/google/complete" element={<GoogleCompletePage />} />
+          {/* Everything else: signed in and authorized by an admin */}
           <Route
             element={
               <AuthGuard>
-                <Layout />
+                <BackendGuard>
+                  <Outlet />
+                </BackendGuard>
               </AuthGuard>
             }
           >
-            <Route index element={<Navigate to="/documents" replace />} />
-            <Route path="/documents" element={<DocumentBrowserPage />} />
-            <Route path="/upload" element={<UploadPage />} />
-            <Route path="/documents/:id" element={<DocumentDetailPage />} />
-            <Route path="*" element={<NotFoundPage />} />
+            <Route index element={<HomePage />} />
+            <Route path="/user-facing" element={<UserFacingPage />} />
+            <Route element={<Layout />}>
+              <Route path="/documents" element={<DocumentBrowserPage />} />
+              <Route path="/upload" element={<UploadPage />} />
+              <Route path="/documents/:id" element={<DocumentDetailPage />} />
+              <Route
+                path="/users"
+                element={
+                  <AdminGuard>
+                    <UsersPage />
+                  </AdminGuard>
+                }
+              />
+              <Route path="*" element={<NotFoundPage />} />
+            </Route>
           </Route>
         </Routes>
       </Suspense>

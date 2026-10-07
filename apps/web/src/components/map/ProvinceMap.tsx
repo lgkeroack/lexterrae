@@ -259,9 +259,9 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
               aria-pressed={layer === value}
               onClick={() => setLayer(value)}
               disabled={value === 'regions' && topo !== null && counts.regions === 0}
-              className={`border px-2.5 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-black disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`border px-2.5 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40 ${
                 layer === value
-                  ? 'border-black bg-black text-white'
+                  ? 'border-accent bg-accent text-white'
                   : 'border-gray-400 hover:bg-gray-100'
               }`}
             >
@@ -281,7 +281,7 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
               onClick={onClick}
               aria-label={label}
               title={label}
-              className="border border-gray-400 p-1.5 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+              className="border border-gray-400 p-1.5 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <Icon className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -320,8 +320,8 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
                         ? '#F2F2F2'
                         : isSelected
                           ? isHover
-                            ? 'rgba(0, 0, 0, 0.5)'
-                            : 'rgba(0, 0, 0, 0.3)'
+                            ? 'rgba(10, 54, 120, 0.5)'
+                            : 'rgba(10, 54, 120, 0.3)'
                           : isHover
                             ? '#D6D6D6'
                             : '#FFFFFF'
@@ -370,7 +370,7 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
 
         {hover && (
           <div
-            className="pointer-events-none absolute z-10 whitespace-nowrap bg-black px-2 py-1 text-xs text-white"
+            className="pointer-events-none absolute z-10 whitespace-nowrap bg-accent px-2 py-1 text-xs text-white"
             style={{ left: hover.x, top: hover.y - 12, transform: 'translate(-50%, -100%)' }}
             aria-hidden="true"
           >

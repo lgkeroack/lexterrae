@@ -22,7 +22,7 @@ export function LoadingSpinner({
   return (
     <div role="status" className={`inline-flex ${className}`.trim()}>
       <div
-        className={`animate-spin rounded-full border-blue-600 border-t-transparent ${sizeClasses[size]}`}
+        className={`animate-spin rounded-full border-accent border-t-transparent ${sizeClasses[size]}`}
         aria-hidden="true"
       />
       <span className="sr-only">{label}…</span>

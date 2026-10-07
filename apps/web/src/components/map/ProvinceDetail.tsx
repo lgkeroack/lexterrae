@@ -121,7 +121,7 @@ export function ProvinceDetail() {
         <button
           type="button"
           onClick={goBack}
-          className="flex items-center gap-1 px-2 py-1 text-sm font-medium text-black hover:underline focus:outline-none focus:ring-2 focus:ring-black"
+          className="flex items-center gap-1 px-2 py-1 text-sm font-medium text-black hover:underline focus:outline-none focus:ring-2 focus:ring-accent"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to map of Canada
@@ -180,9 +180,9 @@ export function ProvinceDetail() {
               type="button"
               aria-pressed={filter === f}
               onClick={() => setFilter(f)}
-              className={`border px-2.5 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-black ${
+              className={`border px-2.5 py-1 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
                 filter === f
-                  ? 'border-black bg-black text-white'
+                  ? 'border-accent bg-accent text-white'
                   : 'border-gray-400 hover:bg-gray-100'
               }`}
             >
@@ -207,7 +207,7 @@ export function ProvinceDetail() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') e.preventDefault();
             }}
-            className="w-full border border-gray-500 py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-black"
+            className="w-full border border-gray-500 py-2 pl-9 pr-3 text-sm placeholder:text-gray-400 focus:border-black focus:outline-none focus:ring-2 focus:ring-accent"
           />
         </div>
 
@@ -293,7 +293,7 @@ export function ProvinceDetail() {
                           type="button"
                           onClick={() => void removeCustom(item)}
                           aria-label={`Delete ${item.name} (added by you)`}
-                          className="mx-2 my-2 flex-shrink-0 border border-gray-400 px-2 py-0.5 text-xs hover:border-black hover:bg-black hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                          className="mx-2 my-2 flex-shrink-0 border border-gray-400 px-2 py-0.5 text-xs hover:border-black hover:bg-accent hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         >
                           Delete
                         </button>

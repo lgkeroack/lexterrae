@@ -55,7 +55,7 @@ export function GoogleSignIn() {
       {/* A full-page navigation: the server redirects to Google and back */}
       <a
         href="/api/auth/google/start"
-        className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-400 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+        className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-400 bg-white px-4 py-2 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2"
       >
         <span className="text-base font-bold leading-none" aria-hidden="true">
           G

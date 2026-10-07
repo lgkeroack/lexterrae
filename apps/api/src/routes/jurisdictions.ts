@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { JURISDICTION_LEVELS, type JurisdictionLevel } from '@lexterrae/shared';
+import { requireBackendAccess } from '../middleware/access.js';
 import { authenticate, optionalAuthenticate } from '../middleware/auth.js';
 import { generalLimiter } from '../middleware/rate-limit.js';
 import { validJson, validParams, validQuery } from '../middleware/validate.js';
@@ -84,14 +85,14 @@ router.get('/search', optionalAuthenticate, async (c) => {
 });
 
 /** POST /api/jurisdictions — add a jurisdiction (visible only to the signed-in user). */
-router.post('/', authenticate, async (c) => {
+router.post('/', authenticate, requireBackendAccess, async (c) => {
   const input = await validJson(c, createSchema);
   const data = await jurisdictions.createJurisdiction(c.get('deps'), c.get('userId'), input);
   return c.json({ data }, 201);
 });
 
 /** DELETE /api/jurisdictions/:id — delete a jurisdiction the user added (if unused). */
-router.delete('/:id', authenticate, async (c) => {
+router.delete('/:id', authenticate, requireBackendAccess, async (c) => {
   const { id } = validParams(c, paramsSchema);
   await jurisdictions.deleteCustomJurisdiction(c.get('deps'), c.get('userId'), id);
   return c.body(null, 204);

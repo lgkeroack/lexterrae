@@ -151,7 +151,7 @@ export function Modal({
             onClick={onClose}
             disabled={disableClose}
             data-modal-close="true"
-            className="-m-1 ml-auto rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="-m-1 ml-auto rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Close dialog"
           >
             <X className="h-5 w-5" aria-hidden="true" />

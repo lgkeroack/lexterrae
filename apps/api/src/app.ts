@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 import { requestContext } from './middleware/request-context.js';
+import accessRoutes from './routes/access.js';
 import authRoutes from './routes/auth.js';
 import documentRoutes from './routes/documents.js';
 import healthRoutes from './routes/health.js';
@@ -26,6 +27,7 @@ api.use('*', requestContext);
 
 api.route('/health', healthRoutes);
 api.route('/auth', authRoutes);
+api.route('/access', accessRoutes);
 api.route('/documents', documentRoutes);
 api.route('/jurisdictions', jurisdictionRoutes);
 

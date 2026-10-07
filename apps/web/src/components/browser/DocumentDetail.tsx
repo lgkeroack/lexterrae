@@ -236,7 +236,7 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
   const backLink = (
     <Link
       to={backTo}
-      className="inline-flex items-center gap-1 rounded text-sm text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      className="inline-flex items-center gap-1 rounded text-sm text-gray-600 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
       <ArrowLeft className="h-4 w-4" aria-hidden="true" />
       Back to documents
@@ -454,7 +454,7 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
                   maxLength={MAX_DESCRIPTION}
                   onChange={(e) => setEditDescription(e.target.value)}
                   rows={4}
-                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
                   placeholder="Add a description..."
                 />
                 {descriptionError && (

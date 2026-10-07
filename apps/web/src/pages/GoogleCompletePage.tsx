@@ -20,7 +20,7 @@ export function GoogleCompletePage() {
       .completeGoogleSignIn()
       .then((auth) => {
         setAuth(auth);
-        navigate('/documents', { replace: true });
+        navigate('/', { replace: true });
       })
       .catch(() => navigate('/login?error=failed', { replace: true }));
   }, [navigate, setAuth]);

@@ -13,13 +13,13 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'border border-black bg-black text-white hover:bg-white hover:text-black focus-visible:ring-black disabled:border-gray-300 disabled:bg-gray-300 disabled:text-white',
+    'border border-accent bg-accent text-white hover:bg-white hover:text-black focus-visible:ring-accent disabled:border-gray-300 disabled:bg-gray-300 disabled:text-white',
   secondary:
-    'border border-black bg-white text-black hover:bg-black hover:text-white focus-visible:ring-black disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-white',
+    'border border-black bg-white text-black hover:bg-accent hover:text-white focus-visible:ring-accent disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-white',
   danger:
-    'border-2 border-black bg-white font-bold uppercase tracking-wider text-black hover:bg-black hover:text-white focus-visible:ring-black disabled:border-gray-300 disabled:text-gray-400',
+    'border-2 border-black bg-white font-bold uppercase tracking-wider text-black hover:bg-accent hover:text-white focus-visible:ring-accent disabled:border-gray-300 disabled:text-gray-400',
   ghost:
-    'border border-transparent bg-transparent text-black underline-offset-4 hover:underline focus-visible:ring-black disabled:text-gray-400',
+    'border border-transparent bg-transparent text-black underline-offset-4 hover:underline focus-visible:ring-accent disabled:text-gray-400',
 };
 
 const sizeClasses: Record<ButtonSize, string> = {

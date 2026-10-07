@@ -1,6 +1,7 @@
 import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom';
-import { FileText, Upload, LogOut, Menu, X } from 'lucide-react';
+import { Link, NavLink, Outlet, matchPath, useLocation, useNavigate } from 'react-router-dom';
+import { FileText, Upload, LogOut, Menu, Users, X } from 'lucide-react';
+import { useAccessStore } from '../../stores/accessStore';
 import { useAuthStore } from '../../stores/authStore';
 import { formatTitle } from '../common/useDocumentTitle';
 import { LoadingSpinner } from '../common/LoadingSpinner';
@@ -8,8 +9,9 @@ import { UndoToast } from '../common/UndoToast';
 import { useUndoStore } from '../../stores/undoStore';
 
 const navItems = [
-  { to: '/documents', label: 'Documents', icon: FileText },
-  { to: '/upload', label: 'Upload', icon: Upload },
+  { to: '/documents', label: 'Documents', icon: FileText, adminOnly: false },
+  { to: '/upload', label: 'Upload', icon: Upload, adminOnly: false },
+  { to: '/users', label: 'Users', icon: Users, adminOnly: true },
 ];
 
 // Default tab titles per route; pages may refine with useDocumentTitle().
@@ -17,6 +19,7 @@ const routeTitles: { pattern: string; title: string }[] = [
   { pattern: '/documents/:id', title: 'Document details' },
   { pattern: '/documents', title: 'Documents' },
   { pattern: '/upload', title: 'Upload document' },
+  { pattern: '/users', title: 'Users' },
 ];
 
 function initials(name: string | undefined): string {
@@ -31,6 +34,7 @@ function initials(name: string | undefined): string {
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const user = useAuthStore((s) => s.user);
+  const isAdmin = useAccessStore((s) => s.role === 'admin');
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
@@ -80,7 +84,7 @@ export function AppLayout() {
     <div className="flex h-screen h-dvh bg-white">
       <a
         href="#main-content"
-        className="sr-only z-50 rounded-md bg-white px-4 py-2 text-sm font-medium text-blue-700 shadow focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="sr-only z-50 rounded-md bg-white px-4 py-2 text-sm font-medium text-blue-700 shadow focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:outline-none focus:ring-2 focus:ring-accent"
       >
         Skip to main content
       </a>
@@ -115,17 +119,23 @@ export function AppLayout() {
         <div className="flex h-full flex-col">
           {/* Logo / Title */}
           <div className="flex h-16 items-center gap-2 border-b-4 border-double border-black px-6">
-            <span className="text-2xl font-bold leading-none" aria-hidden="true">
-              §
-            </span>
-            <span className="text-xl font-bold tracking-wide text-black [font-variant-caps:small-caps]">
-              Lex Terrae
-            </span>
+            <Link
+              to="/"
+              title="Home"
+              className="flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <span className="text-2xl font-bold leading-none" aria-hidden="true">
+                §
+              </span>
+              <span className="text-xl font-bold tracking-wide text-black [font-variant-caps:small-caps]">
+                Lex Terrae
+              </span>
+            </Link>
             {/* Close button for mobile */}
             <button
               ref={closeButtonRef}
               type="button"
-              className="-mr-2 ml-auto rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 lg:hidden"
+              className="-mr-2 ml-auto rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:hidden"
               onClick={closeSidebar}
               aria-label="Close navigation menu"
             >
@@ -135,22 +145,24 @@ export function AppLayout() {
 
           {/* Navigation */}
           <nav aria-label="Main" className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                    isActive
-                      ? 'bg-black text-white'
-                      : 'text-black underline-offset-4 hover:underline'
-                  }`
-                }
-              >
-                <item.icon className="h-5 w-5" aria-hidden="true" />
-                {item.label}
-              </NavLink>
-            ))}
+            {navItems
+              .filter((item) => isAdmin || !item.adminOnly)
+              .map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                      isActive
+                        ? 'bg-accent text-white'
+                        : 'text-black underline-offset-4 hover:underline'
+                    }`
+                  }
+                >
+                  <item.icon className="h-5 w-5" aria-hidden="true" />
+                  {item.label}
+                </NavLink>
+              ))}
           </nav>
 
           {/* User info / Logout */}
@@ -176,7 +188,7 @@ export function AppLayout() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:underline underline-offset-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:underline underline-offset-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <LogOut className="h-4 w-4" aria-hidden="true" />
               Log out
@@ -193,21 +205,25 @@ export function AppLayout() {
             ref={menuButtonRef}
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="rounded-md p-2 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            className="rounded-md p-2 text-gray-600 hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label="Open navigation menu"
             aria-expanded={sidebarOpen}
             aria-controls="app-sidebar"
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>
-          <div className="ml-2 flex items-center gap-2">
+          <Link
+            to="/"
+            title="Home"
+            className="ml-2 flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
             <span className="text-xl font-bold leading-none" aria-hidden="true">
               §
             </span>
             <span className="text-lg font-bold tracking-wide text-black [font-variant-caps:small-caps]">
               Lex Terrae
             </span>
-          </div>
+          </Link>
         </header>
 
         {/* Page content */}

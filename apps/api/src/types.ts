@@ -1,3 +1,4 @@
+import type { BackendRole } from '@lexterrae/shared';
 import type { Bindings, Config } from './env.js';
 import type { Sql } from './lib/db.js';
 import type { Logger } from './lib/logger.js';
@@ -22,5 +23,7 @@ export interface AppEnv {
     deps: Deps;
     /** Set by the authenticate middleware. */
     userId: string;
+    /** Set by the requireBackendAccess / requireAdmin middleware. */
+    backendRole: BackendRole;
   };
 }

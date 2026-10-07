@@ -1,5 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { FileSizeError, ValidationError } from '../lib/errors.js';
+import { requireBackendAccess } from '../middleware/access.js';
 import { authenticate } from '../middleware/auth.js';
 import { generalLimiter, searchLimiter, uploadLimiter } from '../middleware/rate-limit.js';
 import {
@@ -21,7 +22,8 @@ import {
 const router = new Hono<AppEnv>();
 
 // All document routes require authentication; limits then apply per user
-router.use('*', authenticate, generalLimiter);
+// The backend: only users an admin has authorized (see routes/access.ts)
+router.use('*', authenticate, generalLimiter, requireBackendAccess);
 
 /**
  * Caps the upload size (1 MB of headroom for the other form fields). Browsers send Content-Length,

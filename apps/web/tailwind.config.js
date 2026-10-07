@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 
-// Black-on-white, legal-document styling. Every colour name used in the app maps to a
+// Black-on-white, legal-document styling with a deep blue highlight. Every colour name used in the app maps to a
 // monochrome scale, so existing utility classes (bg-blue-600, text-red-700, …) render in
 // black, white and greys without touching each component.
 
@@ -34,6 +34,15 @@ const ink = {
   950: '#000000',
 };
 
+// Deep blue highlight for fills, selections and focus rings; text stays black
+const accent = {
+  DEFAULT: '#0a3678',
+  dark: '#072654',
+  50: '#eef3fb',
+  100: '#dce6f6',
+  300: '#9db5df',
+};
+
 const serif = ['"Times New Roman"', 'Times', 'Liberation Serif', 'serif'];
 const rule = '0 0 0 1px #000000';
 
@@ -55,11 +64,12 @@ export default {
       amber: ink,
       yellow: ink,
       purple: ink,
+      accent,
       map: {
         unselected: '#ffffff',
-        hover: '#d6d6d6',
-        selected: '#000000',
-        federal: '#000000',
+        hover: accent[100],
+        selected: accent.DEFAULT,
+        federal: accent.DEFAULT,
       },
     },
     fontFamily: {

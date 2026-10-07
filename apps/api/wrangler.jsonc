@@ -43,6 +43,8 @@
     "ENVIRONMENT": "production",
     "JWT_EXPIRY": "15m",
     "JWT_REFRESH_EXPIRY": "7d",
-    "MAX_FILE_SIZE_MB": "50"
+    "MAX_FILE_SIZE_MB": "50",
+    // Becomes the backend admin on sign-in while there is no admin (see 0006_backend_access.sql)
+    "BOOTSTRAP_ADMIN_EMAIL": "lgkeroack@lgkeroack.com"
   }
 }
