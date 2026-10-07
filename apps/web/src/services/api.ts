@@ -544,20 +544,6 @@ export const api = {
     return request<LibraryResponse>(`/library/documents?${query}`, { signal });
   },
 
-  /** Downloads a library document and saves it with its original filename. */
-  async downloadLibraryDocument(id: string, filename: string): Promise<void> {
-    const res = await authFetch(`/library/documents/${encodeURIComponent(id)}/download`);
-    if (!res.ok) throw await parseErrorResponse(res);
-    const url = URL.createObjectURL(await res.blob());
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || 'document';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  },
-
   /** The signed-in user's backend role (null when not authorized). */
   async getBackendAccess(): Promise<BackendRole | null> {
     const res = await request<BackendAccess>('/access');

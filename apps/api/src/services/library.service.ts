@@ -1,8 +1,5 @@
 import type { JurisdictionSearchResult, LibraryDocument } from '@lexterrae/shared';
-import { NotFoundError } from '../lib/errors.js';
 import type { Deps } from '../types.js';
-import { audit } from './audit.service.js';
-import * as files from './file.service.js';
 import * as jurisdictions from './jurisdiction.service.js';
 
 export interface LibraryQuery {
@@ -79,29 +76,4 @@ export async function listLibrary(deps: Deps, query: LibraryQuery) {
       totalPages: Math.ceil(total / query.pageSize),
     },
   };
-}
-
-/** Downloads a document from the library (open to the public; viewerId when signed in). */
-export async function downloadLibraryDocument(
-  deps: Deps,
-  viewerId: string | null,
-  documentId: string,
-) {
-  const [doc] = (await deps.sql`
-    SELECT file_key AS "fileKey", original_filename AS "originalFilename" FROM documents
-    WHERE id = ${documentId} AND deleted_at IS NULL`) as {
-    fileKey: string;
-    originalFilename: string;
-  }[];
-  if (!doc) throw new NotFoundError('Document not found');
-  const file = await files.getFile(deps, doc.fileKey);
-  audit(deps, {
-    actorUserId: viewerId,
-    action: 'document.download',
-    resourceType: 'document',
-    resourceId: documentId,
-    changes: { via: 'library' },
-    outcome: 'success',
-  });
-  return { ...file, filename: doc.originalFilename };
 }

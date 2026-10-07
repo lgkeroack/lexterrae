@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, LocateFixed, MapPin, Search, X } from 'lucide-react';
+import { ArrowLeft, LocateFixed, MapPin, Search, X } from 'lucide-react';
 import {
   JURISDICTION_LEVEL_LABELS,
   type JurisdictionSearchResult,
@@ -13,7 +13,6 @@ import { useAccessStore } from '../stores/accessStore';
 import { useAuthStore } from '../stores/authStore';
 import { describePath } from '../stores/jurisdictionStore';
 import { useDebounce } from '../hooks/useDebounce';
-import { formatFileSize } from '../utils/format';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useDocumentTitle } from '../components/common/useDocumentTitle';
@@ -267,7 +266,6 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
     loading: boolean;
   }>({ data: null, docs: [], error: null, loading: true });
   const [attempt, setAttempt] = useState(0);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Keep the search box's text in the URL so Back/links restore it
   useEffect(() => {
@@ -311,15 +309,6 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
     [place, state.docs],
   );
   const total = state.data?.pagination.totalItems ?? 0;
-
-  const download = async (doc: LibraryDocument) => {
-    setDownloadError(null);
-    try {
-      await api.downloadLibraryDocument(doc.id, doc.originalFilename);
-    } catch (err) {
-      setDownloadError(getErrorMessage(err, `Could not download “${doc.title}”.`));
-    }
-  };
 
   if (!place && state.loading) return <LoadingSpinner label="Loading documents" />;
   if (!place) {
@@ -400,11 +389,6 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
           {state.error}
         </p>
       )}
-      {downloadError && (
-        <p role="alert" className="mt-2 text-sm font-bold italic">
-          {downloadError}
-        </p>
-      )}
 
       {!state.loading && total === 0 && !state.error && (
         <p className="mt-8 italic">
@@ -427,26 +411,16 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
           </h2>
           <ul className="divide-y divide-gray-300">
             {group.docs.map((doc) => (
-              <li key={doc.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-start">
-                <div className="min-w-0 flex-1">
+              <li key={doc.id} className="py-4">
+                <div className="min-w-0">
                   <h3 className="text-lg font-bold [font-variant-caps:normal]">{doc.title}</h3>
                   {doc.description && (
                     <p className="mt-1 line-clamp-3 text-sm">{doc.description}</p>
                   )}
-                  <p className="mt-1 text-xs text-gray-600">
-                    {doc.fileType.toUpperCase()} · {formatFileSize(doc.fileSizeBytes)}
-                    {doc.tags.length > 0 && <> · {doc.tags.join(', ')}</>}
-                  </p>
+                  {doc.tags.length > 0 && (
+                    <p className="mt-1 text-xs text-gray-600">{doc.tags.join(', ')}</p>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void download(doc)}
-                  aria-label={`Download ${doc.title}`}
-                  className="inline-flex flex-shrink-0 items-center gap-1.5 self-start border border-black px-3 py-1.5 text-sm hover:bg-accent hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                >
-                  <Download className="h-4 w-4" aria-hidden="true" />
-                  Download
-                </button>
               </li>
             ))}
           </ul>
