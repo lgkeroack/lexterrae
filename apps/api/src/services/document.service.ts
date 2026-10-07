@@ -31,13 +31,25 @@ function documentColumns(options: { includeContent?: boolean } = {}): string {
     ${options.includeContent ? 'd.content_text AS "contentText",' : ''}
     COALESCE((
       SELECT json_agg(json_build_object('id', j.id, 'name', j.name, 'code', j.code,
-                                        'level', j.level, 'parentId', j.parent_id,
-                                        'inherited', dj.inherited)
-                      ORDER BY dj.inherited, j.name)
+                                        'level', j.level, 'parentId', j.parent_id)
+                      ORDER BY j.name)
       FROM document_jurisdictions dj JOIN jurisdictions j ON j.id = dj.jurisdiction_id
       WHERE dj.document_id = d.id
     ), '[]'::json) AS jurisdictions,
     d.uploaded_at AS "uploadedAt", d.updated_at AS "updatedAt"`;
+}
+
+/** Adds each tagged jurisdiction's location (Canada › British Columbia › …) for display. */
+async function withPaths(deps: Deps, userId: string, docs: Document[]): Promise<Document[]> {
+  const paths = await jurisdictions.getPaths(
+    deps,
+    docs.flatMap((d) => d.jurisdictions.map((j) => j.id)),
+    userId,
+  );
+  for (const doc of docs) {
+    for (const j of doc.jurisdictions) j.path = paths.get(j.id) ?? [];
+  }
+  return docs;
 }
 
 /** Whitelisted sort columns (values come from the validator's enum). */
@@ -79,7 +91,6 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
     params.userId,
   );
   const jurisdictionIds = resolved.map((j) => j.id);
-  const inheritedIds = await jurisdictions.getInheritedIds(deps, jurisdictionIds, userId);
 
   const fileKey = files.generateFileKey(userId, extension);
   await files.putFile(deps, fileKey, file, mimeType, filename);
@@ -96,9 +107,6 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
       ), links AS (
         INSERT INTO document_jurisdictions (document_id, jurisdiction_id)
         SELECT doc.id, unnest(${jurisdictionIds}::uuid[]) FROM doc
-      ), inherited_links AS (
-        INSERT INTO document_jurisdictions (document_id, jurisdiction_id, inherited)
-        SELECT doc.id, unnest(${inheritedIds}::uuid[]), true FROM doc
       )
       SELECT id FROM doc`;
     documentId = (row as { id: string }).id;
@@ -149,7 +157,8 @@ export async function getDocument(
   );
   // SECURITY: 404 rather than 403 so other users' document IDs are not revealed (07-SECURITY.md §1.4)
   if (!rows[0]) throw new NotFoundError('Document not found');
-  return rows[0] as unknown as Document;
+  const [doc] = await withPaths(deps, userId, [rows[0] as unknown as Document]);
+  return doc!;
 }
 
 /** Paginated list with search, jurisdiction, file type and date filters. */
@@ -171,10 +180,17 @@ export async function listDocuments(deps: Deps, userId: string, query: DocumentQ
   if (query.dateFrom) where.push(`d.uploaded_at >= ${param(query.dateFrom)}`);
   if (query.dateTo) where.push(`d.uploaded_at <= ${param(query.dateTo)}`);
 
+  if (query.appliesTo) {
+    // Documents for the case's own place and every place above it (never places inside it)
+    const ids = await jurisdictions.getSelfAndAncestorIds(deps, query.appliesTo, userId);
+    where.push(`EXISTS (SELECT 1 FROM document_jurisdictions dj
+      WHERE dj.document_id = d.id AND dj.jurisdiction_id = ANY(${param(ids)}::uuid[]))`);
+  }
+
   if (query.jurisdictionId || query.jurisdictionLevel) {
     const conditions: string[] = [];
     if (query.jurisdictionId) {
-      // Include sub-jurisdictions: "BC" also matches documents tagged with BC municipalities
+      // Documents filed under a place: "BC" also matches documents tagged with BC municipalities
       const ids = await jurisdictions.getSelfAndDescendantIds(deps, query.jurisdictionId, userId);
       conditions.push(`dj.jurisdiction_id = ANY(${param(ids)}::uuid[])`);
     }
@@ -201,7 +217,7 @@ export async function listDocuments(deps: Deps, userId: string, query: DocumentQ
   const total = (countRows[0] as { total: number }).total;
 
   return {
-    data: rows as unknown as Document[],
+    data: await withPaths(deps, userId, rows as unknown as Document[]),
     pagination: {
       page: query.page,
       pageSize: query.pageSize,

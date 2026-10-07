@@ -1,4 +1,4 @@
-import type { JurisdictionLevel } from './jurisdiction.js';
+import type { JurisdictionLevel, JurisdictionPathItem } from './jurisdiction.js';
 
 /** Jurisdiction summary embedded in document responses. */
 export interface DocumentJurisdictionSummary {
@@ -7,11 +7,8 @@ export interface DocumentJurisdictionSummary {
   code: string;
   level: JurisdictionLevel;
   parentId: string | null;
-  /**
-   * Implied by a smaller jurisdiction the document is tagged with (Toronto → Ontario, Canada),
-   * rather than picked directly.
-   */
-  inherited?: boolean;
+  /** Where it is: its ancestors, broadest first, without Canada (Canada › British Columbia › …). */
+  path?: JurisdictionPathItem[];
 }
 
 export type FileType =
@@ -65,8 +62,13 @@ export interface DocumentQueryParams {
   pageSize?: number;
   search?: string;
   jurisdictionLevel?: string;
-  /** Matches documents tagged with this jurisdiction or any of its sub-jurisdictions. */
+  /** Documents filed under a place: tagged with this jurisdiction or anything inside it. */
   jurisdictionId?: string;
+  /**
+   * Documents that apply to a case in this place: tagged with it or anything above it. A case in
+   * Squamish gets Squamish, British Columbia and Canada documents, but not those of other places.
+   */
+  appliesTo?: string;
   fileType?: FileType;
   /** The API accepts these snake_case keys as well as camelCase (uploadedAt, fileSizeBytes, updatedAt). */
   sortBy?: 'title' | 'uploaded_at' | 'file_size_bytes';

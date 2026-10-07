@@ -465,33 +465,48 @@ export async function deleteCustomJurisdiction(
   });
 }
 
-/** Levels a document inherits from a smaller jurisdiction it is tagged with. */
-const INHERITED_LEVELS = new Set(['provincial', 'territorial', 'federal']);
-
 /**
- * The provinces/territories and Canada that a set of jurisdictions sit in, excluding the
- * jurisdictions themselves: a document tagged with Toronto also applies in Ontario and Canada.
+ * The jurisdiction and everything above it: Squamish → Squamish, Squamish-Lillooet, British
+ * Columbia, Canada. A document tagged with any of these applies to a case in Squamish.
  */
-export async function getInheritedIds(
+export async function getSelfAndAncestorIds(
   deps: Deps,
-  ids: string[],
+  id: string,
   userId?: string,
 ): Promise<string[]> {
   const visible = await visibleTo(deps, userId);
-  const direct = new Set(ids);
-  const inherited = new Set<string>();
-  for (const id of ids) {
-    const seen = new Set<string>();
-    let parentId = visible.get(id)?.parentId;
-    while (parentId && !seen.has(parentId)) {
-      seen.add(parentId);
-      const parent = visible.get(parentId);
-      if (!parent) break;
-      if (INHERITED_LEVELS.has(parent.level) && !direct.has(parent.id)) inherited.add(parent.id);
-      parentId = parent.parentId;
-    }
+  const row = visible.get(id);
+  if (!row) throw new NotFoundError(`Jurisdiction with ID "${id}" not found`);
+  return [id, ...visible.path(row).map((p) => p.id), ...rootOf(visible, row)];
+}
+
+/** `path()` leaves out Canada (it is implied in display); applicability needs it. */
+function rootOf(visible: VisibleJurisdictions, row: Row): string[] {
+  let current: Row | undefined = row;
+  const seen = new Set<string>();
+  while (current?.parentId && !seen.has(current.parentId)) {
+    seen.add(current.parentId);
+    const parent = visible.get(current.parentId);
+    if (!parent) break;
+    if (parent.level === 'federal') return [parent.id];
+    current = parent;
   }
-  return [...inherited];
+  return [];
+}
+
+/** Ancestors (broadest first, without Canada) of each jurisdiction, for display. */
+export async function getPaths(
+  deps: Deps,
+  ids: string[],
+  userId?: string,
+): Promise<Map<string, JurisdictionPathItem[]>> {
+  const visible = await visibleTo(deps, userId);
+  const paths = new Map<string, JurisdictionPathItem[]>();
+  for (const id of new Set(ids)) {
+    const row = visible.get(id);
+    if (row) paths.set(id, visible.path(row));
+  }
+  return paths;
 }
 
 /** The jurisdiction plus all descendants (e.g. a province and everything in it). */
