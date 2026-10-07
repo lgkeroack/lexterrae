@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.js';
 import documentRoutes from './routes/documents.js';
 import healthRoutes from './routes/health.js';
 import jurisdictionRoutes from './routes/jurisdictions.js';
+import libraryRoutes from './routes/library.js';
 import type { AppEnv } from './types.js';
 
 export const app = new Hono<AppEnv>();
@@ -30,6 +31,7 @@ api.route('/auth', authRoutes);
 api.route('/access', accessRoutes);
 api.route('/documents', documentRoutes);
 api.route('/jurisdictions', jurisdictionRoutes);
+api.route('/library', libraryRoutes);
 
 // Unknown /api routes: JSON 404 (must not fall through to the static-assets fallback below)
 api.all('*', (c) => notFoundHandler(c));

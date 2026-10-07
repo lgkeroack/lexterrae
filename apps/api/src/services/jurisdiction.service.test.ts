@@ -4,6 +4,7 @@ import {
   clearJurisdictionCache,
   createJurisdiction,
   deleteCustomJurisdiction,
+  findByCodes,
   getPaths,
   getSelfAndAncestorIds,
   getDescendants,
@@ -276,5 +277,17 @@ describe('getPaths', () => {
     const paths = await getPaths(deps, ['mississauga', 'on']);
     expect(paths.get('mississauga')?.map((p) => p.name)).toEqual(['Ontario', 'Peel']);
     expect(paths.get('on')).toEqual([]);
+  });
+});
+
+describe('findByCodes (use my location)', () => {
+  it('returns the first official jurisdiction among the codes, most specific first', async () => {
+    const { deps } = fakeDeps();
+    const found = await findByCodes(deps, ['ON-NOWHERE', 'MISSISSAUGA', 'ON']);
+    expect(found).toMatchObject({
+      name: 'Mississauga',
+      path: [{ name: 'Ontario' }, { name: 'Peel' }],
+    });
+    await expect(findByCodes(deps, ['ZZ'])).resolves.toBeNull();
   });
 });

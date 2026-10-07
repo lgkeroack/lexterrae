@@ -20,6 +20,7 @@ import type {
   BackendAccess,
   BackendRole,
   GrantAccessRequest,
+  LibraryResponse,
 } from '@lexterrae/shared';
 
 const BASE_URL = '/api';
@@ -521,6 +522,40 @@ export const api = {
       body: JSON.stringify(input),
     });
     return res.data;
+  },
+
+  /** The jurisdiction for map area codes, most specific first (for "use my location"). */
+  async locateJurisdiction(codes: string[]): Promise<JurisdictionSearchResult> {
+    const res = await request<{ data: JurisdictionSearchResult }>(
+      `/jurisdictions/locate?codes=${encodeURIComponent(codes.join(','))}`,
+    );
+    return res.data;
+  },
+
+  /** User-facing library: every document that applies in a place. */
+  async getLibrary(
+    params: { jurisdictionId: string; search?: string; page?: number; pageSize?: number },
+    signal?: AbortSignal,
+  ): Promise<LibraryResponse> {
+    const query = new URLSearchParams({ jurisdictionId: params.jurisdictionId });
+    if (params.search) query.set('search', params.search);
+    if (params.page) query.set('page', String(params.page));
+    if (params.pageSize) query.set('pageSize', String(params.pageSize));
+    return request<LibraryResponse>(`/library/documents?${query}`, { signal });
+  },
+
+  /** Downloads a library document and saves it with its original filename. */
+  async downloadLibraryDocument(id: string, filename: string): Promise<void> {
+    const res = await authFetch(`/library/documents/${encodeURIComponent(id)}/download`);
+    if (!res.ok) throw await parseErrorResponse(res);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'document';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 
   /** The signed-in user's backend role (null when not authorized). */

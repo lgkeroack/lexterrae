@@ -4,12 +4,11 @@ import { ArrowRight } from 'lucide-react';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { useDocumentTitle } from '../components/common/useDocumentTitle';
 
-const sections = [
+const sections: { to: string; title: string; description: string; note?: string }[] = [
   {
     to: '/user-facing',
     title: 'User facing',
-    description: 'The public side of Lex Terrae.',
-    note: 'Pending',
+    description: 'Find the laws and documents that apply where you are.',
   },
   {
     to: '/documents',

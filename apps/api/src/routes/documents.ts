@@ -10,6 +10,7 @@ import {
   validParams,
   validQuery,
 } from '../middleware/validate.js';
+import { fileResponse } from '../lib/download.js';
 import * as documents from '../services/document.service.js';
 import type { AppEnv } from '../types.js';
 import {
@@ -138,17 +139,7 @@ router.get('/:id/download', async (c) => {
   const { id } = validParams(c, documentParamsSchema);
   const file = await documents.downloadDocument(c.get('deps'), id, c.get('userId'));
 
-  // ASCII fallback plus RFC 5987 UTF-8 filename so non-ASCII names survive intact
-  const asciiName = file.filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
-  return c.body(file.body, 200, {
-    'Content-Type': file.contentType,
-    'Content-Length': String(file.contentLength),
-    // SECURITY: force download; never let the browser render uploaded content in our origin
-    'Content-Disposition': `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
-    'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'none'",
-    'Cache-Control': 'no-store',
-  });
+  return fileResponse(c, file);
 });
 
 export default router;

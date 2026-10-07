@@ -6,6 +6,7 @@ import { authenticate, optionalAuthenticate } from '../middleware/auth.js';
 import { generalLimiter } from '../middleware/rate-limit.js';
 import { validJson, validParams, validQuery } from '../middleware/validate.js';
 import * as jurisdictions from '../services/jurisdiction.service.js';
+import { NotFoundError } from '../lib/errors.js';
 import type { AppEnv } from '../types.js';
 
 const router = new Hono<AppEnv>();
@@ -81,6 +82,29 @@ router.get('/search', optionalAuthenticate, async (c) => {
     limit,
   });
   cacheFor(c);
+  return c.json({ data }, 200);
+});
+
+const locateSchema = z.object({
+  codes: z
+    .string({ required_error: 'codes is required' })
+    .transform((v) =>
+      v
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().max(100)).min(1, 'Give at least one code').max(10)),
+});
+
+/**
+ * GET /api/jurisdictions/locate?codes=BC-SQUAMISH,BC-SQUAMISH_LILLOOET,BC — the first official
+ * jurisdiction among these map area codes (most specific first), for "use my location".
+ */
+router.get('/locate', async (c) => {
+  const { codes } = validQuery(c, locateSchema);
+  const data = await jurisdictions.findByCodes(c.get('deps'), codes);
+  if (!data) throw new NotFoundError('No jurisdiction matches that location');
   return c.json({ data }, 200);
 });
 

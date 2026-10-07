@@ -3,46 +3,18 @@ import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { geoArea, geoCentroid, geoConicConformal, geoPath, select, zoom, zoomIdentity } from 'd3';
 import type { ZoomBehavior } from 'd3';
 import { feature } from 'topojson-client';
-import type { Topology, GeometryCollection } from 'topojson-specification';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 import type { JurisdictionSearchResult } from '@lexterrae/shared';
+import { loadProvinceMap, type ProvinceTopology, type ShapeProps } from '../../data/provinceMaps';
 import { useJurisdictionStore } from '../../stores/jurisdictionStore';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 
-/** Shape properties written by scripts/build-province-maps.mjs. */
-interface ShapeProps {
-  /** Jurisdiction code; absent for areas with no government of their own. */
-  c?: string;
-  n: string;
-  /** r = regional, m = municipal, i = Indigenous */
-  l?: 'r' | 'm' | 'i';
-}
-
 type Layer = 'regions' | 'local';
-type ProvinceTopology = Topology<{
-  regions: GeometryCollection<ShapeProps>;
-  local: GeometryCollection<ShapeProps>;
-}>;
 type Shape = Feature<Polygon | MultiPolygon, ShapeProps>;
 
 const WIDTH = 800;
 const MAX_HEIGHT = 560;
 const LEVEL_NAMES = { r: 'Regional', m: 'Municipal', i: 'Indigenous' } as const;
-
-// Province map files are static and large: fetch each once per page load
-const cache = new Map<string, Promise<ProvinceTopology>>();
-function loadMap(code: string): Promise<ProvinceTopology> {
-  let request = cache.get(code);
-  if (!request) {
-    request = fetch(`/maps/${code}.json`).then((res) => {
-      if (!res.ok) throw new Error(`Map not available (${res.status})`);
-      return res.json() as Promise<ProvinceTopology>;
-    });
-    request.catch(() => cache.delete(code));
-    cache.set(code, request);
-  }
-  return request;
-}
 
 interface ProvinceMapProps {
   provinceCode: string;
@@ -75,7 +47,7 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
     let active = true;
     setTopo(null);
     setError(null);
-    loadMap(provinceCode)
+    loadProvinceMap(provinceCode)
       .then((data) => {
         if (!active) return;
         setTopo(data);
