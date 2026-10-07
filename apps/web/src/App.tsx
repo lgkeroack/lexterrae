@@ -122,6 +122,15 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/auth/google/complete" element={<GoogleCompletePage />} />
+          {/* Any signed-in user; those without backend access are sent here */}
+          <Route
+            path="/user-facing"
+            element={
+              <AuthGuard>
+                <UserFacingPage />
+              </AuthGuard>
+            }
+          />
           {/* Everything else: signed in and authorized by an admin */}
           <Route
             element={
@@ -133,7 +142,6 @@ export function App() {
             }
           >
             <Route index element={<HomePage />} />
-            <Route path="/user-facing" element={<UserFacingPage />} />
             <Route element={<Layout />}>
               <Route path="/documents" element={<DocumentBrowserPage />} />
               <Route path="/upload" element={<UploadPage />} />

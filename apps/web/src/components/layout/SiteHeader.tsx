@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LogOut } from 'lucide-react';
+import { useAccessStore } from '../../stores/accessStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useUndoStore } from '../../stores/undoStore';
 
@@ -9,11 +10,13 @@ export function SiteHeader() {
   const email = useAuthStore((s) => s.user?.email);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+  // Without backend access there is no home page: the logo leads to user facing
+  const home = useAccessStore((s) => (s.role ? '/' : '/user-facing'));
 
   return (
     <header className="flex h-16 items-center gap-4 border-b-4 border-double border-black px-4 sm:px-6">
       <Link
-        to="/"
+        to={home}
         className="flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <span className="text-2xl font-bold leading-none" aria-hidden="true">

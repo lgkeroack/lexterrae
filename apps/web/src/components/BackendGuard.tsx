@@ -1,12 +1,10 @@
 import React, { useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { LogOut, ShieldAlert } from 'lucide-react';
+import { Link, Navigate } from 'react-router-dom';
+import { ShieldAlert } from 'lucide-react';
 import { useAccessStore } from '../stores/accessStore';
-import { useAuthStore } from '../stores/authStore';
 import { LoadingSpinner } from './common/LoadingSpinner';
-import { useDocumentTitle } from './common/useDocumentTitle';
 
-/** After AuthGuard: only users an admin has authorized may continue. */
+/** After AuthGuard: only users an admin has authorized may continue; others go to user facing. */
 export function BackendGuard({ children }: { children: React.ReactNode }) {
   const { role, status, error, load } = useAccessStore();
 
@@ -35,7 +33,8 @@ export function BackendGuard({ children }: { children: React.ReactNode }) {
       </AccessMessage>
     );
   }
-  if (!role) return <NoAccess />;
+  // Not enabled for the backend: straight to the user-facing side
+  if (!role) return <Navigate to="/user-facing" replace />;
   return <>{children}</>;
 }
 
@@ -51,38 +50,6 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
         Back to the home page
       </Link>
     </div>
-  );
-}
-
-function NoAccess() {
-  useDocumentTitle('Not authorized');
-  const email = useAuthStore((s) => s.user?.email);
-  const logout = useAuthStore((s) => s.logout);
-  const navigate = useNavigate();
-  return (
-    <AccessMessage title="Not authorized">
-      <p>
-        {email ? (
-          <>
-            <strong>{email}</strong> is signed in but has not been given access.
-          </>
-        ) : (
-          'This account has not been given access.'
-        )}{' '}
-        Ask an administrator to add you, or sign in with another account.
-      </p>
-      <button
-        type="button"
-        onClick={() => {
-          navigate('/login', { replace: true });
-          logout();
-        }}
-        className="mt-6 inline-flex items-center gap-2 border border-black px-4 py-2 text-sm hover:bg-accent hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      >
-        <LogOut className="h-4 w-4" aria-hidden="true" />
-        Sign out
-      </button>
-    </AccessMessage>
   );
 }
 
