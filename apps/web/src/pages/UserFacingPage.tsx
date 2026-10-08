@@ -14,6 +14,7 @@ import { useAuthStore } from '../stores/authStore';
 import { describePath } from '../stores/jurisdictionStore';
 import { useDebounce } from '../hooks/useDebounce';
 import { AiPackagePanel } from '../components/library/AiPackagePanel';
+import { Switch } from '../components/common/Switch';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useDocumentTitle } from '../components/common/useDocumentTitle';
@@ -270,6 +271,17 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
 
   useEffect(() => setPage(1), [placeId, search]);
 
+  // Documents switched off for the AI package (all are included until switched off)
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  useEffect(() => setExcluded(new Set()), [placeId]);
+  const setIncluded = (id: string, include: boolean) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (include) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   useEffect(() => {
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -353,7 +365,12 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
         </button>
       </div>
 
-      <AiPackagePanel placeId={place.id} placeName={place.name} />
+      <AiPackagePanel
+        placeId={place.id}
+        placeName={place.name}
+        excluded={excluded}
+        onIncludeAll={() => setExcluded(new Set())}
+      />
 
       <div className="relative mt-5">
         <label htmlFor="library-search" className="sr-only">
@@ -405,7 +422,12 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
           </h2>
           <ul className="divide-y divide-gray-300">
             {group.docs.map((doc) => (
-              <li key={doc.id} className="py-4">
+              <li
+                key={doc.id}
+                className={`flex flex-col gap-2 py-4 sm:flex-row sm:items-start sm:justify-between ${
+                  excluded.has(doc.id) ? 'opacity-60' : ''
+                }`}
+              >
                 <div className="min-w-0">
                   <h3 className="text-lg font-bold [font-variant-caps:normal]">{doc.title}</h3>
                   {doc.description && (
@@ -415,6 +437,12 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
                     <p className="mt-1 text-xs text-gray-600">{doc.tags.join(', ')}</p>
                   )}
                 </div>
+                <Switch
+                  checked={!excluded.has(doc.id)}
+                  onChange={(on) => setIncluded(doc.id, on)}
+                  label="In AI package"
+                  description={`Include “${doc.title}” in the AI package`}
+                />
               </li>
             ))}
           </ul>

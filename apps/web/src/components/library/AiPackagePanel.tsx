@@ -1,22 +1,12 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
+import { AlertTriangle, Bot, CheckCircle2, Download } from 'lucide-react';
 import {
-  AlertTriangle,
-  Bot,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Download,
-} from 'lucide-react';
-import {
-  JURISDICTION_LEVEL_LABELS,
   LARGEST_ASSISTANTS_TOKENS,
   MOST_ASSISTANTS_TOKENS,
   SPLIT_PART_TOKENS,
-  estimateDocumentTokens,
   estimatePackageTokens,
   formatTokens,
   packageFit,
-  type PackageContentsDocument,
   type PackageContentsResponse,
   type PackageFit,
   type PackagePlanResponse,
@@ -43,11 +33,20 @@ type DownloadState =
  * backend's current contents, to upload to Claude, ChatGPT or any other assistant. Shows its
  * estimated size before download and lets people choose which documents to include.
  */
-export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeName: string }) {
+export function AiPackagePanel({
+  placeId,
+  placeName,
+  excluded,
+  onIncludeAll,
+}: {
+  placeId: string;
+  placeName: string;
+  /** Documents switched off in the list below (included unless listed here). */
+  excluded: Set<string>;
+  onIncludeAll: () => void;
+}) {
   const [contents, setContents] = useState<PackageContentsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [isCustomizing, setIsCustomizing] = useState(false);
   const [download, setDownload] = useState<DownloadState>({ state: 'idle' });
 
   useEffect(() => {
@@ -59,7 +58,6 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
       .getPackageContents(placeId, controller.signal)
       .then((data) => {
         setContents(data);
-        setSelected(new Set(data.documents.map((d) => d.id)));
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) {
@@ -70,7 +68,7 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
   }, [placeId]);
 
   const documents = useMemo(() => contents?.documents ?? [], [contents]);
-  const chosen = documents.filter((d) => selected.has(d.id));
+  const chosen = documents.filter((d) => !excluded.has(d.id));
   const tokens = estimatePackageTokens(chosen);
   const fit = packageFit(tokens);
   const isNarrowed = chosen.length < documents.length;
@@ -137,23 +135,22 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsCustomizing((v) => !v)}
-            aria-expanded={isCustomizing}
-            className="mt-3 inline-flex items-center gap-1 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {isCustomizing ? (
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          <p className="mt-2 text-sm text-gray-600">
+            {isNarrowed ? (
+              <>
+                {documents.length - chosen.length} switched off in the list below.{' '}
+                <button
+                  type="button"
+                  onClick={onIncludeAll}
+                  className="text-black underline underline-offset-4 hover:no-underline"
+                >
+                  Include all again
+                </button>
+              </>
             ) : (
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              'Use the switch on each document below to leave it out.'
             )}
-            Choose which documents to include
-          </button>
-
-          {isCustomizing && (
-            <PackageChooser contents={contents} selected={selected} onChange={setSelected} />
-          )}
+          </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
@@ -343,102 +340,5 @@ function SplitOffer({
         </span>
       </div>
     </div>
-  );
-}
-
-// ─── Choosing documents ───────────────────────────────────────────────────────
-
-interface ChooserProps {
-  contents: PackageContentsResponse;
-  selected: Set<string>;
-  onChange: (next: Set<string>) => void;
-}
-
-/** A checkbox per document, grouped under the jurisdiction it applies through. */
-function PackageChooser({ contents, selected, onChange }: ChooserProps) {
-  const bySource = useMemo(() => {
-    const groups = new Map<string, PackageContentsDocument[]>();
-    for (const doc of contents.documents) {
-      groups.set(doc.sourceId, [...(groups.get(doc.sourceId) ?? []), doc]);
-    }
-    return contents.sources
-      .map((source) => ({ source, docs: groups.get(source.id) ?? [] }))
-      .filter((g) => g.docs.length > 0);
-  }, [contents]);
-
-  const toggle = (id: string, on: boolean) => {
-    const next = new Set(selected);
-    if (on) next.add(id);
-    else next.delete(id);
-    onChange(next);
-  };
-
-  return (
-    <fieldset className="mt-3 border-t border-gray-300 pt-3 text-sm">
-      <legend className="sr-only">Documents to include</legend>
-      <div className="flex gap-4">
-        <button
-          type="button"
-          onClick={() => onChange(new Set(contents.documents.map((d) => d.id)))}
-          className="underline underline-offset-4 hover:no-underline"
-        >
-          Include everything
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(new Set())}
-          className="underline underline-offset-4 hover:no-underline"
-        >
-          Clear
-        </button>
-      </div>
-      {bySource.map(({ source, docs }) => (
-        <div key={source.id} className="mt-3">
-          <p className="text-xs uppercase tracking-wider text-gray-600">
-            {source.name} · {JURISDICTION_LEVEL_LABELS[source.level]}
-          </p>
-          <ul className="mt-1 space-y-1">
-            {docs.map((doc) => (
-              <li key={doc.id}>
-                <Checkbox checked={selected.has(doc.id)} onChange={(on) => toggle(doc.id, on)}>
-                  {doc.title}{' '}
-                  <span className="text-gray-600">
-                    (
-                    {doc.textStatus === 'ready'
-                      ? formatTokens(estimateDocumentTokens(doc.textChars))
-                      : doc.textStatus === 'pending'
-                        ? 'text still being read'
-                        : 'no readable text'}
-                    )
-                  </span>
-                </Checkbox>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </fieldset>
-  );
-}
-
-function Checkbox({
-  checked,
-  onChange,
-  children,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-1 h-4 w-4 flex-shrink-0"
-      />
-      <span>{children}</span>
-    </label>
   );
 }
