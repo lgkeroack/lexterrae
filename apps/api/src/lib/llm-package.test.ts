@@ -53,6 +53,10 @@ describe('buildPackage', () => {
     expect(text).toContain('entire universe of information you may use');
     expect(text).toContain('Squamish, Squamish-Lillooet, British Columbia, Canada');
     expect(text).toContain('Generated 2026-10-07');
+    expect(text).toContain('Contains 2 documents that apply in Squamish.');
+    expect(buildPackage(place, [doc('One', 'x', 'Squamish')], at)).toContain(
+      'Contains 1 document that applies in Squamish.',
+    );
   });
 
   it('labels every paragraph for citation and marks documents without text', () => {
