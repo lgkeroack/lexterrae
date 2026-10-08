@@ -86,8 +86,6 @@ function neutralize(text: string): string {
 export interface PackageSelection {
   /** Documents that apply in the place in total; more than are in the package when narrowed. */
   totalApplying: number;
-  /** The topic the person narrowed the package to, if any. */
-  topic?: string;
 }
 
 export function buildPackage(
@@ -107,9 +105,8 @@ export function buildPackage(
   const firstQuestion = `How can I help you regarding ${place.name}?`;
   const withText = docs.filter((d) => d.contentText);
   const narrowed = docs.length < selection.totalApplying;
-  const topic = selection.topic?.replace(/\s+/g, ' ').trim();
   const contains = narrowed
-    ? `Contains ${docs.length} of the ${selection.totalApplying} documents that apply in ${place.name}, selected by the person who downloaded it${topic ? ` for the topic "${topic}"` : ''}.`
+    ? `Contains ${docs.length} of the ${selection.totalApplying} documents that apply in ${place.name}, selected by the person who downloaded it.`
     : `Contains ${docs.length} document${docs.length === 1 ? '' : 's'} that apply in ${place.name}.`;
 
   const out: string[] = [];
@@ -131,7 +128,7 @@ export function buildPackage(
     '### 2. Your only source',
     '',
     narrowed
-      ? `- The documents in this package are the entire universe of information you may use. They are a selection: ${docs.length} of the ${selection.totalApplying} documents that apply in ${place.name}${topic ? `, chosen for the topic "${topic}"` : ''}. Other documents that apply there are not included, so when an answer could depend on them, say that this package may not cover it.`
+      ? `- The documents in this package are the entire universe of information you may use. They are a selection: ${docs.length} of the ${selection.totalApplying} documents that apply in ${place.name}. Other documents that apply there are not included, so when an answer could depend on them, say that this package may not cover it.`
       : `- The documents in this package are the entire universe of information you may use. Treat them as complete for ${place.name}.`,
     '- Never use your general knowledge, training data, the internet, other uploaded files or earlier conversations to answer, and never fill gaps with assumptions, even when you believe you know the answer.',
     '- If the documents do not answer a question, say so plainly: "The documents in this package do not address this." Then, where it helps, name the kind of document that would, without answering from memory.',

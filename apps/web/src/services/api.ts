@@ -546,14 +546,12 @@ export const api = {
     return request<LibraryResponse>(`/library/documents?${query}`, { signal });
   },
 
-  /** What an AI package for a place can hold, with sizes (optionally only documents on a topic). */
+  /** What an AI package for a place can hold: every applying document, with its size. */
   async getPackageContents(
     jurisdictionId: string,
-    search?: string,
     signal?: AbortSignal,
   ): Promise<PackageContentsResponse> {
     const query = new URLSearchParams({ jurisdictionId });
-    if (search) query.set('search', search);
     return request<PackageContentsResponse>(`/library/package/contents?${query}`, { signal });
   },
 

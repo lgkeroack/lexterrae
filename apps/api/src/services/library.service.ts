@@ -112,41 +112,29 @@ function sourceRank(order: string[], tagged: { id: string }[]): number {
   return found === -1 ? order.length : found;
 }
 
-function searchCondition(params: unknown[], search: string): string {
-  params.push(`%${search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`);
-  const p = `$${params.length}`;
-  return `(d.title ILIKE ${p} OR d.description ILIKE ${p} OR d.content_text ILIKE ${p}
-    OR EXISTS (SELECT 1 FROM unnest(d.tags) AS t WHERE t ILIKE ${p}))`;
-}
-
 /**
- * What an AI package for the place can hold: every applying document (or those matching a
- * topic) with its size, so the page can estimate the package and let the person narrow it.
+ * What an AI package for the place can hold: every applying document with its size, so the
+ * page can estimate the package and let the person choose which documents to include.
  */
 export async function getPackageContents(
   deps: Deps,
   jurisdictionId: string,
-  search?: string,
 ): Promise<PackageContentsResponse> {
   const { ids, place, order, sources } = await applicability(deps, jurisdictionId);
   const params: unknown[] = [ids];
   const applies = `d.deleted_at IS NULL AND EXISTS (SELECT 1 FROM document_jurisdictions dj
     WHERE dj.document_id = d.id AND dj.jurisdiction_id = ANY($1::uuid[]))`;
-  const where = search ? `${applies} AND ${searchCondition(params, search)}` : applies;
-  const [rows, count] = await Promise.all([
-    deps.sql.query(
-      `SELECT d.id, d.title, d.file_type AS "fileType",
+  const rows = (await deps.sql.query(
+    `SELECT d.id, d.title, d.file_type AS "fileType",
          COALESCE(length(d.content_text), 0)::int AS "textChars",
          CASE WHEN d.content_text IS NOT NULL THEN 'ready'
               WHEN d.text_checked_at IS NULL THEN 'pending' ELSE 'none' END AS "textStatus",
          ARRAY(SELECT dj.jurisdiction_id FROM document_jurisdictions dj
                WHERE dj.document_id = d.id) AS "tagged"
-       FROM documents d WHERE ${where}
+       FROM documents d WHERE ${applies}
        ORDER BY d.title, d.id LIMIT ${PACKAGE_MAX_DOCUMENTS}`,
-      params,
-    ) as unknown as Promise<(Omit<PackageContentsDocument, 'sourceId'> & { tagged: string[] })[]>,
-    deps.sql.query(`SELECT count(*)::int AS n FROM documents d WHERE ${applies}`, [ids]),
-  ]);
+    params,
+  )) as unknown as (Omit<PackageContentsDocument, 'sourceId'> & { tagged: string[] })[];
   const documents = rows
     .map(({ tagged, ...doc }) => {
       const rank = sourceRank(
@@ -161,7 +149,6 @@ export async function getPackageContents(
     place,
     sources,
     documents,
-    totalApplying: (count[0] as { n: number }).n,
   };
 }
 
@@ -172,7 +159,7 @@ export async function getPackageContents(
  */
 export async function buildLibraryPackage(
   deps: Deps,
-  request: { jurisdictionId: string; documentIds?: string[]; topic?: string },
+  request: { jurisdictionId: string; documentIds?: string[] },
   now = new Date(),
 ) {
   const { ids, place, order } = await applicability(deps, request.jurisdictionId);
@@ -234,9 +221,6 @@ export async function buildLibraryPackage(
   const totalApplying = (count[0] as { n: number }).n;
   return {
     filename: packageFilename(place.name, now),
-    body: buildPackage(place, docs, now, {
-      totalApplying,
-      topic: request.topic,
-    }),
+    body: buildPackage(place, docs, now, { totalApplying }),
   };
 }

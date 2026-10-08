@@ -37,10 +37,7 @@ const jurisdictionIdSchema = z
   .string({ required_error: 'Choose a location (jurisdictionId)' })
   .uuid('jurisdictionId must be a jurisdiction UUID');
 
-const contentsSchema = z.object({
-  jurisdictionId: jurisdictionIdSchema,
-  search: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
-});
+const contentsSchema = z.object({ jurisdictionId: jurisdictionIdSchema });
 
 const packageSchema = z.object({
   jurisdictionId: jurisdictionIdSchema,
@@ -49,21 +46,20 @@ const packageSchema = z.object({
     .min(1, 'Choose at least one document')
     .max(500)
     .optional(),
-  topic: z.string().trim().max(100).optional(),
 });
 
 /**
- * GET /api/library/package/contents?jurisdictionId=&search= — the documents an AI package for
+ * GET /api/library/package/contents?jurisdictionId= — the documents an AI package for
  * the place can hold, with their sizes, so the page can estimate it and let people narrow it.
  */
 router.get('/package/contents', searchLimiter, async (c) => {
-  const { jurisdictionId, search } = validQuery(c, contentsSchema);
+  const { jurisdictionId } = validQuery(c, contentsSchema);
   c.header('Cache-Control', 'private, no-store');
-  return c.json(await library.getPackageContents(c.get('deps'), jurisdictionId, search), 200);
+  return c.json(await library.getPackageContents(c.get('deps'), jurisdictionId), 200);
 });
 
 /**
- * POST /api/library/package { jurisdictionId, documentIds?, topic? } — a Markdown file for AI
+ * POST /api/library/package { jurisdictionId, documentIds? } — a Markdown file for AI
  * assistants holding the documents that apply in the place (or the chosen ones), built from the
  * backend's current contents.
  */

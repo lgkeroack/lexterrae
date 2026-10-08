@@ -84,10 +84,8 @@ describe('narrowed packages and size', () => {
   it('tells the assistant when it holds only a selection', () => {
     const text = buildPackage(place, [doc('Noise By-law', 'Quiet hours.', 'Squamish')], at, {
       totalApplying: 12,
-      topic: 'noise',
     });
     expect(text).toContain('Contains 1 of the 12 documents that apply in Squamish');
-    expect(text).toContain('chosen for the topic "noise"');
     expect(text).toContain('say that this package may not cover it');
     expect(text).not.toContain('Treat them as complete');
   });

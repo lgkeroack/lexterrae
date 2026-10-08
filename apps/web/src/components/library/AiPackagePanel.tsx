@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Bot,
@@ -36,7 +36,7 @@ type DownloadState =
 /**
  * The AI reference package: one file with the documents that apply in a place, built from the
  * backend's current contents, to upload to Claude, ChatGPT or any other assistant. Shows its
- * estimated size before download and lets people narrow it by jurisdiction, topic or document.
+ * estimated size before download and lets people choose which documents to include.
  */
 export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeName: string }) {
   const [contents, setContents] = useState<PackageContentsResponse | null>(null);
@@ -44,17 +44,14 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [download, setDownload] = useState<DownloadState>({ state: 'idle' });
-  /** The topic the selection was narrowed to (described to the assistant). */
-  const [topic, setTopic] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     setContents(null);
     setLoadError(null);
     setDownload({ state: 'idle' });
-    setTopic(null);
     api
-      .getPackageContents(placeId, undefined, controller.signal)
+      .getPackageContents(placeId, controller.signal)
       .then((data) => {
         setContents(data);
         setSelected(new Set(data.documents.map((d) => d.id)));
@@ -79,7 +76,6 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
       const filename = await api.downloadLibraryPackage({
         jurisdictionId: placeId,
         ...(isNarrowed ? { documentIds: chosen.map((d) => d.id) } : {}),
-        ...(isNarrowed && topic ? { topic } : {}),
       });
       setDownload({ state: 'done', filename });
     } catch (err) {
@@ -152,17 +148,11 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
             ) : (
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             )}
-            Choose what to include
+            Choose which documents to include
           </button>
 
           {isCustomizing && (
-            <PackageChooser
-              contents={contents}
-              selected={selected}
-              onChange={setSelected}
-              topic={topic}
-              onTopicChange={setTopic}
-            />
+            <PackageChooser contents={contents} selected={selected} onChange={setSelected} />
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -193,22 +183,16 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
   );
 }
 
-// ─── Narrowing the package ────────────────────────────────────────────────────
+// ─── Choosing documents ───────────────────────────────────────────────────────
 
 interface ChooserProps {
   contents: PackageContentsResponse;
   selected: Set<string>;
   onChange: (next: Set<string>) => void;
-  topic: string | null;
-  onTopicChange: (topic: string | null) => void;
 }
 
-function PackageChooser({ contents, selected, onChange, topic, onTopicChange }: ChooserProps) {
-  const topicId = useId();
-  const [topicInput, setTopicInput] = useState(topic ?? '');
-  const [topicStatus, setTopicStatus] = useState<string | null>(null);
-  const [isFiltering, setIsFiltering] = useState(false);
-
+/** A checkbox per document, grouped under the jurisdiction it applies through. */
+function PackageChooser({ contents, selected, onChange }: ChooserProps) {
   const bySource = useMemo(() => {
     const groups = new Map<string, PackageContentsDocument[]>();
     for (const doc of contents.documents) {
@@ -219,170 +203,73 @@ function PackageChooser({ contents, selected, onChange, topic, onTopicChange }: 
       .filter((g) => g.docs.length > 0);
   }, [contents]);
 
-  const toggle = (ids: string[], on: boolean) => {
+  const toggle = (id: string, on: boolean) => {
     const next = new Set(selected);
-    for (const id of ids) {
-      if (on) next.add(id);
-      else next.delete(id);
-    }
+    if (on) next.add(id);
+    else next.delete(id);
     onChange(next);
   };
 
-  const applyTopic = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const q = topicInput.trim();
-    if (q.length < 2) return;
-    setIsFiltering(true);
-    setTopicStatus(null);
-    try {
-      const matches = await api.getPackageContents(contents.place.id, q);
-      const ids = new Set(matches.documents.map((d) => d.id));
-      onChange(new Set([...selected].filter((id) => ids.has(id))));
-      onTopicChange(q);
-      setTopicStatus(
-        ids.size === 0
-          ? `No documents mention “${q}”.`
-          : `${ids.size} document${ids.size === 1 ? '' : 's'} mention “${q}”; the others are now left out.`,
-      );
-    } catch (err) {
-      setTopicStatus(getErrorMessage(err, 'Could not filter by topic.'));
-    } finally {
-      setIsFiltering(false);
-    }
-  };
-
-  const reset = () => {
-    onChange(new Set(contents.documents.map((d) => d.id)));
-    onTopicChange(null);
-    setTopicInput('');
-    setTopicStatus(null);
-  };
-
   return (
-    <div className="mt-3 space-y-5 border-t border-gray-300 pt-4 text-sm">
-      <fieldset>
-        <legend className="font-bold">Jurisdictions</legend>
-        <ul className="mt-2 space-y-1">
-          {bySource.map(({ source, docs }) => {
-            const ids = docs.map((d) => d.id);
-            const count = ids.filter((id) => selected.has(id)).length;
-            return (
-              <li key={source.id}>
-                <Checkbox
-                  checked={count === ids.length}
-                  indeterminate={count > 0 && count < ids.length}
-                  onChange={(on) => toggle(ids, on)}
-                >
-                  {source.name}{' '}
+    <fieldset className="mt-3 border-t border-gray-300 pt-3 text-sm">
+      <legend className="sr-only">Documents to include</legend>
+      <div className="flex gap-4">
+        <button
+          type="button"
+          onClick={() => onChange(new Set(contents.documents.map((d) => d.id)))}
+          className="underline underline-offset-4 hover:no-underline"
+        >
+          Include everything
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(new Set())}
+          className="underline underline-offset-4 hover:no-underline"
+        >
+          Clear
+        </button>
+      </div>
+      {bySource.map(({ source, docs }) => (
+        <div key={source.id} className="mt-3">
+          <p className="text-xs uppercase tracking-wider text-gray-600">
+            {source.name} · {JURISDICTION_LEVEL_LABELS[source.level]}
+          </p>
+          <ul className="mt-1 space-y-1">
+            {docs.map((doc) => (
+              <li key={doc.id}>
+                <Checkbox checked={selected.has(doc.id)} onChange={(on) => toggle(doc.id, on)}>
+                  {doc.title}{' '}
                   <span className="text-gray-600">
-                    ({JURISDICTION_LEVEL_LABELS[source.level]} · {docs.length} document
-                    {docs.length === 1 ? '' : 's'} ·{' '}
-                    {formatTokens(
-                      docs.reduce((n, d) => n + estimateDocumentTokens(d.textChars), 0),
-                    )}
+                    (
+                    {doc.textStatus === 'ready'
+                      ? formatTokens(estimateDocumentTokens(doc.textChars))
+                      : doc.textStatus === 'pending'
+                        ? 'text still being read'
+                        : 'no readable text'}
                     )
                   </span>
                 </Checkbox>
               </li>
-            );
-          })}
-        </ul>
-      </fieldset>
-
-      <form onSubmit={(e) => void applyTopic(e)}>
-        <label htmlFor={topicId} className="font-bold">
-          Topic
-        </label>
-        <p className="text-gray-600">Keep only the documents that mention a word or phrase.</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <input
-            id={topicId}
-            type="search"
-            value={topicInput}
-            onChange={(e) => setTopicInput(e.target.value)}
-            placeholder="e.g. noise, zoning, parking"
-            className="min-w-0 flex-1 border border-gray-500 px-3 py-1.5 placeholder:text-gray-400 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent"
-          />
-          <button
-            type="submit"
-            disabled={isFiltering || topicInput.trim().length < 2}
-            className="border border-black px-3 py-1.5 hover:bg-accent hover:text-white disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-white"
-          >
-            {isFiltering ? 'Filtering…' : 'Keep matching'}
-          </button>
+            ))}
+          </ul>
         </div>
-        {topicStatus && (
-          <p className="mt-1 text-gray-600" aria-live="polite">
-            {topicStatus}
-          </p>
-        )}
-      </form>
-
-      <fieldset>
-        <legend className="font-bold">Documents</legend>
-        <div className="mt-1 flex gap-4">
-          <button
-            type="button"
-            onClick={reset}
-            className="underline underline-offset-4 hover:no-underline"
-          >
-            Include everything
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(new Set())}
-            className="underline underline-offset-4 hover:no-underline"
-          >
-            Clear
-          </button>
-        </div>
-        {bySource.map(({ source, docs }) => (
-          <div key={source.id} className="mt-3">
-            <p className="text-xs uppercase tracking-wider text-gray-600">{source.name}</p>
-            <ul className="mt-1 space-y-1">
-              {docs.map((doc) => (
-                <li key={doc.id}>
-                  <Checkbox checked={selected.has(doc.id)} onChange={(on) => toggle([doc.id], on)}>
-                    {doc.title}{' '}
-                    <span className="text-gray-600">
-                      (
-                      {doc.textStatus === 'ready'
-                        ? formatTokens(estimateDocumentTokens(doc.textChars))
-                        : doc.textStatus === 'pending'
-                          ? 'text still being read'
-                          : 'no readable text'}
-                      )
-                    </span>
-                  </Checkbox>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </fieldset>
-    </div>
+      ))}
+    </fieldset>
   );
 }
 
 function Checkbox({
   checked,
-  indeterminate = false,
   onChange,
   children,
 }: {
   checked: boolean;
-  indeterminate?: boolean;
   onChange: (checked: boolean) => void;
   children: React.ReactNode;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (ref.current) ref.current.indeterminate = indeterminate;
-  }, [indeterminate]);
   return (
     <label className="flex cursor-pointer items-start gap-2">
       <input
-        ref={ref}
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
