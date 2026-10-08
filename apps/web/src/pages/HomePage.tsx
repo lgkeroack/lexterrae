@@ -6,7 +6,7 @@ import { useDocumentTitle } from '../components/common/useDocumentTitle';
 
 const sections: { to: string; title: string; description: string; note?: string }[] = [
   {
-    to: '/user-facing',
+    to: '/',
     title: 'User facing',
     description: 'Find the laws and documents that apply where you are.',
   },

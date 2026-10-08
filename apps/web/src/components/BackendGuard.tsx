@@ -34,7 +34,7 @@ export function BackendGuard({ children }: { children: React.ReactNode }) {
     );
   }
   // Not enabled for the backend: straight to the user-facing side
-  if (!role) return <Navigate to="/user-facing" replace />;
+  if (!role) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 

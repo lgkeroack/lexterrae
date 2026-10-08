@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, LocateFixed, MapPin, Search, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { LocateFixed, MapPin, Search, X } from 'lucide-react';
 import {
   JURISDICTION_LEVEL_LABELS,
   type JurisdictionSearchResult,
@@ -28,7 +28,8 @@ const PAGE_SIZE = 50;
  */
 export function UserFacingPage() {
   useDocumentTitle('User facing');
-  const { role, status, load } = useAccessStore();
+  // Signed in: learn whether to offer the Backend link in the header
+  const { status, load } = useAccessStore();
   const isSignedIn = useAuthStore((s) => s.status === 'authenticated');
   useEffect(() => {
     if (isSignedIn && status === 'idle') void load();
@@ -45,16 +46,6 @@ export function UserFacingPage() {
     <div className="min-h-screen bg-white">
       <SiteHeader />
       <main id="main-content" className="mx-auto max-w-4xl px-4 py-10 sm:py-12">
-        {/* Home is only for users with backend access; everyone else starts here */}
-        {isSignedIn && role && (
-          <Link
-            to="/"
-            className="mb-6 inline-flex items-center gap-1.5 text-sm underline underline-offset-4 hover:no-underline"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Home
-          </Link>
-        )}
         {placeId ? (
           <Results placeId={placeId} onChangeLocation={changeLocation} />
         ) : (

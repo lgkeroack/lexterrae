@@ -169,7 +169,7 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
                 ? `Saved ${download.filename}.`
                 : download.state === 'error'
                   ? download.message
-                  : 'Markdown file (.md), made from the current documents.'}
+                  : null}
             </span>
           </div>
         </>

@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { Routes, Route, Link, Outlet } from 'react-router-dom';
+import { Routes, Route, Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { FileQuestion, AlertTriangle } from 'lucide-react';
 import { Layout } from './components/Layout';
 import { LoadingSpinner } from './components/LoadingSpinner';
@@ -38,6 +38,12 @@ const DocumentDetailPage = React.lazy(() =>
     default: m.DocumentDetailPage,
   })),
 );
+
+/** The user-facing page used to live at /user-facing; keep old links (and ?place=) working. */
+function ToUserFacing() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/', search }} replace />;
+}
 
 function SuspenseFallback() {
   return (
@@ -122,8 +128,9 @@ export function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/auth/google/complete" element={<GoogleCompletePage />} />
-          {/* Public; signed-in users without backend access are sent here too */}
-          <Route path="/user-facing" element={<UserFacingPage />} />
+          {/* Home: the public, user-facing page (also where users without backend access land) */}
+          <Route index element={<UserFacingPage />} />
+          <Route path="/user-facing" element={<ToUserFacing />} />
           {/* Everything else: signed in and authorized by an admin */}
           <Route
             element={
@@ -134,7 +141,7 @@ export function App() {
               </AuthGuard>
             }
           >
-            <Route index element={<HomePage />} />
+            <Route path="/home" element={<HomePage />} />
             <Route element={<Layout />}>
               <Route path="/documents" element={<DocumentBrowserPage />} />
               <Route path="/upload" element={<UploadPage />} />
