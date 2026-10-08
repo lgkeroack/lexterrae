@@ -350,7 +350,7 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
                 AI reference packages: only its title and description are.{' '}
                 {doc.fileType === 'pdf' || doc.fileType === 'png' || doc.fileType === 'jpg'
                   ? 'It looks like a scan or image; upload a text-based PDF instead.'
-                  : 'Upload it as a text-based PDF, Word (.docx), Excel (.xlsx) or RTF file instead.'}
+                  : 'It may be damaged or password-protected; upload it as a text-based PDF, Word, Excel or RTF file instead.'}
               </p>
             )}
             {doc.textStatus === 'pending' && (

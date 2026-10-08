@@ -53,6 +53,30 @@ describe('extractXlsx', () => {
   });
 });
 
+describe('extractXlsx dates', () => {
+  it('shows date-formatted numbers as dates, in either date system', () => {
+    const book = (date1904: boolean) =>
+      zipSync({
+        'xl/workbook.xml': strToU8(
+          `<workbook><workbookPr${date1904 ? ' date1904="1"' : ''}/><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+        ),
+        'xl/_rels/workbook.xml.rels': strToU8(
+          '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+        ),
+        'xl/styles.xml': strToU8(
+          '<styleSheet><numFmts><numFmt numFmtId="164" formatCode="d mmm yyyy"/></numFmts>' +
+            '<cellXfs><xf numFmtId="0"/><xf numFmtId="164"/><xf numFmtId="20"/></cellXfs></styleSheet>',
+        ),
+        'xl/worksheets/sheet1.xml': strToU8(
+          `<worksheet><sheetData><row r="1"><c r="A1" s="1"><v>${date1904 ? 44216 : 45678}</v></c>` +
+            '<c r="B1" s="2"><v>0.75</v></c><c r="C1"><v>45678</v></c></row></sheetData></worksheet>',
+        ),
+      });
+    expect(extractXlsx(book(false))).toBe('Sheet: S\n\n2025-01-21 | 18:00 | 45678');
+    expect(extractXlsx(book(true))).toBe('Sheet: S\n\n2025-01-21 | 18:00 | 45678');
+  });
+});
+
 describe('RTF', () => {
   it('extracts text, escapes and Unicode, and skips tables of fonts and colours', () => {
     const rtf =

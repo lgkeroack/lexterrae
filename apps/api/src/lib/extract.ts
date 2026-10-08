@@ -1,4 +1,5 @@
 import { unzipSync } from 'fflate';
+import { formatExcelDate, isDateFormat } from './excel-dates.js';
 
 /**
  * Plain-text extraction for Word (.docx), Excel (.xlsx) and RTF uploads, so their contents can be
@@ -39,7 +40,7 @@ export function decodeXml(text: string): string {
 }
 
 /** Tidies extracted text: no trailing spaces, at most one blank line in a row. */
-function tidy(text: string): string {
+export function tidy(text: string): string {
   return text
     .split('\n')
     .map((l) => l.replace(/[ \t]+$/, ''))
@@ -134,6 +135,7 @@ export function extractXlsx(bytes: Uint8Array): string {
       n === 'xl/workbook.xml' ||
       n === 'xl/_rels/workbook.xml.rels' ||
       n === 'xl/sharedStrings.xml' ||
+      n === 'xl/styles.xml' ||
       /^xl\/worksheets\/[^/]+\.xml$/.test(n),
   );
   const workbook = files['xl/workbook.xml'];
@@ -142,6 +144,20 @@ export function extractXlsx(bytes: Uint8Array): string {
   const shared = [...(files['xl/sharedStrings.xml'] ?? '').matchAll(/<si>([\s\S]*?)<\/si>/g)].map(
     (m) => texts(m[1]!),
   );
+  // Which cell styles are dates: style index (the cell's s attribute) → number format
+  const styles = files['xl/styles.xml'] ?? '';
+  const customFormats = new Map(
+    [...styles.matchAll(/<numFmt\b[^>]*>/g)].map(
+      (m) => [Number(attr(m[0], 'numFmtId')), attr(m[0], 'formatCode')] as const,
+    ),
+  );
+  const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)?.[1] ?? '';
+  const dateStyles = [...cellXfs.matchAll(/<xf\b[^>]*>/g)].map((m) => {
+    const id = Number(attr(m[0], 'numFmtId') ?? 0);
+    return isDateFormat(id, customFormats.get(id));
+  });
+  const date1904 = /<workbookPr\b[^>]*\sdate1904="(?:1|true)"/.test(workbook);
+
   const targets = new Map(
     [...(files['xl/_rels/workbook.xml.rels'] ?? '').matchAll(/<Relationship\b[^>]*>/g)].map(
       (m) => [attr(m[0], 'Id'), attr(m[0], 'Target')] as const,
@@ -169,7 +185,14 @@ export function extractXlsx(bytes: Uint8Array): string {
         if (type === 's' && raw !== undefined) value = shared[Number(raw)] ?? '';
         else if (type === 'inlineStr') value = texts(inner);
         else if (type === 'b' && raw !== undefined) value = raw === '1' ? 'TRUE' : 'FALSE';
-        else if (raw !== undefined) value = decodeXml(raw);
+        else if (
+          raw !== undefined &&
+          type !== 'str' &&
+          type !== 'e' &&
+          dateStyles[Number(attr(attrs, 's') ?? 0)]
+        ) {
+          value = formatExcelDate(Number(raw), date1904);
+        } else if (raw !== undefined) value = decodeXml(raw);
         const ref = attr(attrs, 'r');
         const index = ref ? columnIndex(ref) : cells.length;
         while (cells.length < index) cells.push('');
@@ -216,7 +239,7 @@ const CP1252: Record<number, string> = {
   0x9f: 'Ÿ',
 };
 
-function cp1252(byte: number): string {
+export function cp1252(byte: number): string {
   return CP1252[byte] ?? (byte >= 0x80 && byte <= 0x9f ? '' : String.fromCharCode(byte));
 }
 
