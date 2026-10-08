@@ -107,7 +107,9 @@ export function buildPackage(
   const narrowed = docs.length < selection.totalApplying;
   const contains = narrowed
     ? `Contains ${docs.length} of the ${selection.totalApplying} documents that apply in ${place.name}, selected by the person who downloaded it.`
-    : `Contains ${docs.length} document${docs.length === 1 ? '' : 's'} that apply in ${place.name}.`;
+    : docs.length === 1
+      ? `Contains 1 document that applies in ${place.name}.`
+      : `Contains ${docs.length} documents that apply in ${place.name}.`;
 
   const out: string[] = [];
   out.push(
