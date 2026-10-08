@@ -6,3 +6,4 @@ export * from './types/library.js';
 export * from './types/api.js';
 export * from './types/audit.js';
 export * from './constants.js';
+export * from './package-size.js';

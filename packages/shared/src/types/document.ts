@@ -38,6 +38,11 @@ export interface Document {
   jurisdictions: DocumentJurisdictionSummary[];
   uploadedAt: string;
   updatedAt: string;
+  /**
+   * Whether the file's text could be read (for search and AI packages): `pending` while
+   * extraction runs, `none` for scans, images and other unreadable files.
+   */
+  textStatus?: 'ready' | 'pending' | 'none';
 }
 
 /** Kept for compatibility: every API document response includes jurisdictions. */

@@ -21,6 +21,8 @@ import type {
   BackendRole,
   GrantAccessRequest,
   LibraryResponse,
+  PackageContentsResponse,
+  PackageRequest,
 } from '@lexterrae/shared';
 
 const BASE_URL = '/api';
@@ -544,18 +546,36 @@ export const api = {
     return request<LibraryResponse>(`/library/documents?${query}`, { signal });
   },
 
-  /** Downloads a library document and saves it with its original filename. */
-  async downloadLibraryDocument(id: string, filename: string): Promise<void> {
-    const res = await authFetch(`/library/documents/${encodeURIComponent(id)}/download`);
+  /** What an AI package for a place can hold: every applying document, with its size. */
+  async getPackageContents(
+    jurisdictionId: string,
+    signal?: AbortSignal,
+  ): Promise<PackageContentsResponse> {
+    const query = new URLSearchParams({ jurisdictionId });
+    return request<PackageContentsResponse>(`/library/package/contents?${query}`, { signal });
+  },
+
+  /**
+   * Downloads the AI reference package for a place (all applying documents, or the chosen ones):
+   * a Markdown file to upload to Claude, ChatGPT or another assistant. Returns the filename.
+   */
+  async downloadLibraryPackage(input: PackageRequest): Promise<string> {
+    const res = await authFetch('/library/package', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
     if (!res.ok) throw await parseErrorResponse(res);
+    const disposition = res.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'lex-terrae-package.md';
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a');
     a.href = url;
-    a.download = filename || 'document';
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return filename;
   },
 
   /** The signed-in user's backend role (null when not authorized). */

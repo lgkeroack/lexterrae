@@ -1,8 +1,12 @@
-import type { JurisdictionSearchResult, LibraryDocument } from '@lexterrae/shared';
-import { NotFoundError } from '../lib/errors.js';
+import type {
+  JurisdictionLevel,
+  JurisdictionSearchResult,
+  LibraryDocument,
+  PackageContentsDocument,
+  PackageContentsResponse,
+} from '@lexterrae/shared';
+import { buildPackage, packageFilename, type PackageDocument } from '../lib/llm-package.js';
 import type { Deps } from '../types.js';
-import { audit } from './audit.service.js';
-import * as files from './file.service.js';
 import * as jurisdictions from './jurisdiction.service.js';
 
 export interface LibraryQuery {
@@ -81,27 +85,142 @@ export async function listLibrary(deps: Deps, query: LibraryQuery) {
   };
 }
 
-/** Downloads a document from the library (open to the public; viewerId when signed in). */
-export async function downloadLibraryDocument(
+/** Most documents and text one package may hold, to stay within Worker memory and LLM limits. */
+const PACKAGE_MAX_DOCUMENTS = 500;
+const PACKAGE_MAX_TEXT_CHARS = 20_000_000;
+
+type JurisdictionRef = { id: string; name: string; level: JurisdictionLevel };
+
+/** The place and every jurisdiction containing it, most local first, Canada last. */
+async function applicability(deps: Deps, jurisdictionId: string) {
+  const ids = await jurisdictions.getSelfAndAncestorIds(deps, jurisdictionId);
+  const [place] = await jurisdictions.findByIds(deps, [jurisdictionId]);
+  const chain = [jurisdictionId, ...[...place!.path].reverse().map((p) => p.id)];
+  const federal = ids.filter((id) => !chain.includes(id));
+  const order = [...chain, ...federal];
+  const sources = (await jurisdictions.findByIds(deps, order)).map((j) => ({
+    id: j.id,
+    name: j.name,
+    level: j.level,
+  }));
+  return { ids, place: place!, order, sources };
+}
+
+/** Index in `order` of the most local jurisdiction a document applies through. */
+function sourceRank(order: string[], tagged: { id: string }[]): number {
+  const found = order.findIndex((id) => tagged.some((j) => j.id === id));
+  return found === -1 ? order.length : found;
+}
+
+/**
+ * What an AI package for the place can hold: every applying document with its size, so the
+ * page can estimate the package and let the person choose which documents to include.
+ */
+export async function getPackageContents(
   deps: Deps,
-  viewerId: string | null,
-  documentId: string,
+  jurisdictionId: string,
+): Promise<PackageContentsResponse> {
+  const { ids, place, order, sources } = await applicability(deps, jurisdictionId);
+  const params: unknown[] = [ids];
+  const applies = `d.deleted_at IS NULL AND EXISTS (SELECT 1 FROM document_jurisdictions dj
+    WHERE dj.document_id = d.id AND dj.jurisdiction_id = ANY($1::uuid[]))`;
+  const rows = (await deps.sql.query(
+    `SELECT d.id, d.title, d.file_type AS "fileType",
+         COALESCE(length(d.content_text), 0)::int AS "textChars",
+         CASE WHEN d.content_text IS NOT NULL THEN 'ready'
+              WHEN d.text_checked_at IS NULL THEN 'pending' ELSE 'none' END AS "textStatus",
+         ARRAY(SELECT dj.jurisdiction_id FROM document_jurisdictions dj
+               WHERE dj.document_id = d.id) AS "tagged"
+       FROM documents d WHERE ${applies}
+       ORDER BY d.title, d.id LIMIT ${PACKAGE_MAX_DOCUMENTS}`,
+    params,
+  )) as unknown as (Omit<PackageContentsDocument, 'sourceId'> & { tagged: string[] })[];
+  const documents = rows
+    .map(({ tagged, ...doc }) => {
+      const rank = sourceRank(
+        order,
+        tagged.map((id) => ({ id })),
+      );
+      return { ...doc, sourceId: order[rank] ?? order[order.length - 1]!, rank };
+    })
+    .sort((a, b) => a.rank - b.rank)
+    .map(({ rank: _rank, ...doc }) => doc);
+  return {
+    place,
+    sources,
+    documents,
+  };
+}
+
+/**
+ * The reference package for AI assistants (see lib/llm-package.ts), built on request from what
+ * is in the backend now: every document that applies in the place, or the selection the person
+ * narrowed it to, with full text.
+ */
+export async function buildLibraryPackage(
+  deps: Deps,
+  request: { jurisdictionId: string; documentIds?: string[] },
+  now = new Date(),
 ) {
-  const [doc] = (await deps.sql`
-    SELECT file_key AS "fileKey", original_filename AS "originalFilename" FROM documents
-    WHERE id = ${documentId} AND deleted_at IS NULL`) as {
-    fileKey: string;
-    originalFilename: string;
-  }[];
-  if (!doc) throw new NotFoundError('Document not found');
-  const file = await files.getFile(deps, doc.fileKey);
-  audit(deps, {
-    actorUserId: viewerId,
-    action: 'document.download',
-    resourceType: 'document',
-    resourceId: documentId,
-    changes: { via: 'library' },
-    outcome: 'success',
+  const { ids, place, order } = await applicability(deps, request.jurisdictionId);
+  const params: unknown[] = [ids];
+  let selected = '';
+  if (request.documentIds) {
+    params.push(request.documentIds);
+    selected = 'AND d.id = ANY($2::uuid[])';
+  }
+  const applies = `d.deleted_at IS NULL AND EXISTS (SELECT 1 FROM document_jurisdictions dj
+    WHERE dj.document_id = d.id AND dj.jurisdiction_id = ANY($1::uuid[]))`;
+  const [rowsResult, count] = await Promise.all([
+    deps.sql.query(
+      `SELECT d.id, d.title, d.description, d.tags, d.file_type AS "fileType",
+         d.original_filename AS "originalFilename", d.content_text AS "contentText",
+         (d.content_text IS NULL AND d.text_checked_at IS NULL) AS "textPending",
+         d.uploaded_at AS "uploadedAt", d.updated_at AS "updatedAt",
+         COALESCE((
+           SELECT json_agg(json_build_object('id', j.id, 'name', j.name, 'level', j.level)
+                           ORDER BY j.name)
+           FROM document_jurisdictions dj JOIN jurisdictions j ON j.id = dj.jurisdiction_id
+           WHERE dj.document_id = d.id AND j.created_by IS NULL
+         ), '[]'::json) AS jurisdictions
+       FROM documents d
+       WHERE ${applies} ${selected}
+       ORDER BY d.title, d.id
+       LIMIT ${PACKAGE_MAX_DOCUMENTS}`,
+      params,
+    ),
+    deps.sql.query(`SELECT count(*)::int AS n FROM documents d WHERE ${applies}`, [ids]),
+  ]);
+  const rows = rowsResult as unknown as (Omit<PackageDocument, 'jurisdictions'> & {
+    jurisdictions: JurisdictionRef[];
+  })[];
+
+  const paths = await jurisdictions.getPaths(
+    deps,
+    rows.flatMap((d) => d.jurisdictions.map((j) => j.id)),
+  );
+  // Most local first, matching the user-facing page: the place, its ancestors, then Canada
+  rows.sort((a, b) => sourceRank(order, a.jurisdictions) - sourceRank(order, b.jurisdictions));
+
+  let budget = PACKAGE_MAX_TEXT_CHARS;
+  const docs: PackageDocument[] = rows.map((doc) => {
+    const text = doc.contentText && doc.contentText.length <= budget ? doc.contentText : null;
+    if (text) budget -= text.length;
+    return {
+      ...doc,
+      contentText: text,
+      jurisdictions: doc.jurisdictions.map((j) => ({
+        name: j.name,
+        level: j.level,
+        path: paths.get(j.id) ?? [],
+        applies: ids.includes(j.id),
+      })),
+    };
   });
-  return { ...file, filename: doc.originalFilename };
+
+  const totalApplying = (count[0] as { n: number }).n;
+  return {
+    filename: packageFilename(place.name, now),
+    body: buildPackage(place, docs, now, { totalApplying }),
+  };
 }

@@ -344,6 +344,20 @@ export function DocumentDetail({ documentId }: DocumentDetailProps) {
               {formatFileSize(doc.fileSizeBytes)} &middot; Uploaded{' '}
               <time dateTime={toISODate(doc.uploadedAt)}>{formatDate(doc.uploadedAt)}</time>
             </p>
+            {doc.textStatus === 'none' && (
+              <p role="note" className="mt-2 border-l-4 border-accent pl-3 text-sm">
+                <strong>No readable text.</strong> This file can&apos;t be searched or included in
+                AI reference packages: only its title and description are.{' '}
+                {doc.fileType === 'pdf' || doc.fileType === 'png' || doc.fileType === 'jpg'
+                  ? 'It looks like a scan or image; upload a text-based PDF instead.'
+                  : 'It may be damaged or password-protected; upload it as a text-based PDF, Word, Excel or RTF file instead.'}
+              </p>
+            )}
+            {doc.textStatus === 'pending' && (
+              <p className="mt-2 text-sm italic text-gray-600">
+                Reading this file&apos;s text… it will be searchable shortly.
+              </p>
+            )}
           </div>
         </div>
 

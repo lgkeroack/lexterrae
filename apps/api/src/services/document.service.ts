@@ -36,7 +36,9 @@ function documentColumns(options: { includeContent?: boolean } = {}): string {
       FROM document_jurisdictions dj JOIN jurisdictions j ON j.id = dj.jurisdiction_id
       WHERE dj.document_id = d.id
     ), '[]'::json) AS jurisdictions,
-    d.uploaded_at AS "uploadedAt", d.updated_at AS "updatedAt"`;
+    d.uploaded_at AS "uploadedAt", d.updated_at AS "updatedAt",
+    CASE WHEN d.content_text IS NOT NULL THEN 'ready'
+         WHEN d.text_checked_at IS NULL THEN 'pending' ELSE 'none' END AS "textStatus"`;
 }
 
 /** Adds each tagged jurisdiction's location (Canada › British Columbia › …) for display. */
@@ -100,9 +102,10 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
     const [row] = await deps.sql`
       WITH doc AS (
         INSERT INTO documents (user_id, title, description, file_key, file_type, file_size_bytes,
-                               original_filename, content_text, tags)
+                               original_filename, content_text, tags, text_checked_at)
         VALUES (${userId}, ${title}, ${description}, ${fileKey}, ${extension}, ${file.size},
-                ${filename}, ${contentText}, ${tags})
+                ${filename}, ${contentText}, ${tags},
+                ${files.EXTRACTABLE_TYPES.includes(extension) ? null : new Date()})
         RETURNING id
       ), links AS (
         INSERT INTO document_jurisdictions (document_id, jurisdiction_id)
@@ -131,16 +134,59 @@ export async function uploadDocument(deps: Deps, params: UploadDocumentParams): 
   });
   deps.log.info({ module: 'documents', message: 'Document uploaded', userId, documentId });
 
-  if (extension === 'pdf') deps.defer(indexPdfText(deps, documentId, file));
+  if (files.EXTRACTABLE_TYPES.includes(extension))
+    deps.defer(indexText(deps, documentId, file, extension));
 
   return getDocument(deps, documentId, userId, { includeContent: false });
 }
 
-/** Fills in content_text for a stored PDF (runs after the upload response; never throws). */
-async function indexPdfText(deps: Deps, documentId: string, file: Blob): Promise<void> {
-  const text = await files.extractPdfText(deps, file);
-  if (!text) return;
-  await deps.sql`UPDATE documents SET content_text = ${text} WHERE id = ${documentId}`;
+/**
+ * Fills in content_text for a stored PDF, Word, Excel or RTF file and records that extraction ran
+ * (after the upload response, or from scheduled maintenance; never throws).
+ */
+async function indexText(deps: Deps, documentId: string, file: Blob, fileType: string) {
+  try {
+    const text = await files.extractText(deps, file, fileType);
+    await deps.sql`
+      UPDATE documents SET content_text = ${text}, text_checked_at = now() WHERE id = ${documentId}`;
+  } catch (err) {
+    deps.log.error({
+      module: 'documents',
+      message: 'Failed to save extracted text',
+      documentId,
+      error: err,
+    });
+  }
+}
+
+/**
+ * Extracts text for documents that haven't been checked yet: uploads made before extraction
+ * existed, or whose extraction was interrupted. Run by scheduled maintenance, a few at a time.
+ */
+export async function extractPendingText(deps: Deps, limit = 20): Promise<number> {
+  const pending = (await deps.sql`
+    SELECT id, file_key AS "fileKey", file_type AS "fileType" FROM documents
+    WHERE text_checked_at IS NULL AND deleted_at IS NULL
+    ORDER BY uploaded_at LIMIT ${limit}`) as { id: string; fileKey: string; fileType: string }[];
+  for (const doc of pending) {
+    if (!files.EXTRACTABLE_TYPES.includes(doc.fileType)) {
+      await deps.sql`UPDATE documents SET text_checked_at = now() WHERE id = ${doc.id}`;
+      continue;
+    }
+    try {
+      const stored = await files.getFile(deps, doc.fileKey);
+      const blob = await new Response(stored.body).blob();
+      await indexText(deps, doc.id, blob, doc.fileType);
+    } catch (err) {
+      deps.log.warn({
+        module: 'documents',
+        message: 'Text extraction will retry next run',
+        documentId: doc.id,
+        error: err,
+      });
+    }
+  }
+  return pending.length;
 }
 
 /** A single document owned by the user (404 for missing, deleted or other users' documents). */

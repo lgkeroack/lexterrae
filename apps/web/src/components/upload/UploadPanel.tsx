@@ -597,6 +597,11 @@ export function UploadPanel() {
             </p>
             <p id="upload-dropzone-hint" className="text-xs text-gray-500">
               {ACCEPTED_LABEL} &middot; one file, up to {MAX_FILE_SIZE_MB} MB
+              <span className="mt-1 block">
+                Please upload <strong>text-based PDFs</strong>, not scans: the text of scanned PDFs
+                and images can&apos;t be read, so it can&apos;t be searched or included in AI
+                reference packages. Word, Excel and RTF files are read automatically.
+              </span>
             </p>
           </div>
         )}
