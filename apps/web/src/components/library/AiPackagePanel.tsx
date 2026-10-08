@@ -92,11 +92,6 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
         <Bot className="h-5 w-5" aria-hidden="true" />
         Ask an AI about {placeName}
       </h2>
-      <p className="mt-1 text-sm">
-        Download one file holding the documents that apply here, then upload it to Claude, ChatGPT
-        or another AI assistant. It tells the assistant to answer only from these documents and to
-        cite them, and it will begin by asking how it can help regarding {placeName}.
-      </p>
 
       {loadError && (
         <p role="alert" className="mt-3 text-sm font-bold italic">
