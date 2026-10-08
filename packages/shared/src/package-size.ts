@@ -31,6 +31,9 @@ export function estimatePackageTokens(docs: { textChars: number }[]): number {
 export const MOST_ASSISTANTS_TOKENS = 100_000;
 export const LARGEST_ASSISTANTS_TOKENS = 900_000;
 
+/** Target size of each part when a package is split for assistants that read ~100k tokens. */
+export const SPLIT_PART_TOKENS = 90_000;
+
 export type PackageFit = 'all' | 'largest' | 'none';
 
 export function packageFit(tokens: number): PackageFit {

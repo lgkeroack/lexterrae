@@ -1,30 +1,25 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
+import { AlertTriangle, Bot, CheckCircle2, Download } from 'lucide-react';
 import {
-  AlertTriangle,
-  Bot,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Download,
-} from 'lucide-react';
-import {
-  JURISDICTION_LEVEL_LABELS,
-  estimateDocumentTokens,
+  LARGEST_ASSISTANTS_TOKENS,
+  MOST_ASSISTANTS_TOKENS,
+  SPLIT_PART_TOKENS,
   estimatePackageTokens,
   formatTokens,
   packageFit,
-  type PackageContentsDocument,
   type PackageContentsResponse,
   type PackageFit,
+  type PackagePlanResponse,
 } from '@lexterrae/shared';
 import { api, getErrorMessage } from '../../services/api';
+import { useDebounce } from '../../hooks/useDebounce';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 
 const FIT_MESSAGES: Record<PackageFit, string> = {
   all: 'Small enough for Claude, ChatGPT or Gemini to read in full.',
   largest:
-    'Too large for most assistants to read in full (they read roughly 100,000–200,000 tokens); Gemini can (about 1 million). Others will search the file and may miss passages, so narrow it down for dependable answers.',
-  none: 'Too large for any assistant to read in full: it would search the file and may miss passages. Narrow it down below for dependable answers.',
+    'Too large for most assistants to read in full (they read roughly 100,000–200,000 tokens); Gemini can (about 1 million). Others will search the file and may miss passages: choose fewer documents or split it into smaller files below.',
+  none: 'Too large for any assistant to read in full: it would search the file and may miss passages. Choose fewer documents or split it into smaller files below.',
 };
 
 type DownloadState =
@@ -38,11 +33,20 @@ type DownloadState =
  * backend's current contents, to upload to Claude, ChatGPT or any other assistant. Shows its
  * estimated size before download and lets people choose which documents to include.
  */
-export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeName: string }) {
+export function AiPackagePanel({
+  placeId,
+  placeName,
+  excluded,
+  onIncludeAll,
+}: {
+  placeId: string;
+  placeName: string;
+  /** Documents switched off in the list below (included unless listed here). */
+  excluded: Set<string>;
+  onIncludeAll: () => void;
+}) {
   const [contents, setContents] = useState<PackageContentsResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [isCustomizing, setIsCustomizing] = useState(false);
   const [download, setDownload] = useState<DownloadState>({ state: 'idle' });
 
   useEffect(() => {
@@ -54,7 +58,6 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
       .getPackageContents(placeId, controller.signal)
       .then((data) => {
         setContents(data);
-        setSelected(new Set(data.documents.map((d) => d.id)));
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) {
@@ -65,7 +68,7 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
   }, [placeId]);
 
   const documents = useMemo(() => contents?.documents ?? [], [contents]);
-  const chosen = documents.filter((d) => selected.has(d.id));
+  const chosen = documents.filter((d) => !excluded.has(d.id));
   const tokens = estimatePackageTokens(chosen);
   const fit = packageFit(tokens);
   const isNarrowed = chosen.length < documents.length;
@@ -92,11 +95,6 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
         <Bot className="h-5 w-5" aria-hidden="true" />
         Ask an AI about {placeName}
       </h2>
-      <p className="mt-1 text-sm">
-        Download one file holding the documents that apply here, then upload it to Claude, ChatGPT
-        or another AI assistant. It tells the assistant to answer only from these documents and to
-        cite them, and it will begin by asking how it can help regarding {placeName}.
-      </p>
 
       {loadError && (
         <p role="alert" className="mt-3 text-sm font-bold italic">
@@ -137,23 +135,22 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsCustomizing((v) => !v)}
-            aria-expanded={isCustomizing}
-            className="mt-3 inline-flex items-center gap-1 text-sm underline underline-offset-4 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {isCustomizing ? (
-              <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          <p className="mt-2 text-sm text-gray-600">
+            {isNarrowed ? (
+              <>
+                {documents.length - chosen.length} switched off in the list below.{' '}
+                <button
+                  type="button"
+                  onClick={onIncludeAll}
+                  className="text-black underline underline-offset-4 hover:no-underline"
+                >
+                  Include all again
+                </button>
+              </>
             ) : (
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              'Use the switch on each document below to leave it out.'
             )}
-            Choose which documents to include
-          </button>
-
-          {isCustomizing && (
-            <PackageChooser contents={contents} selected={selected} onChange={setSelected} />
-          )}
+          </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
@@ -174,108 +171,174 @@ export function AiPackagePanel({ placeId, placeName }: { placeId: string; placeN
                 ? `Saved ${download.filename}.`
                 : download.state === 'error'
                   ? download.message
-                  : 'Markdown file (.md), made from the current documents.'}
+                  : null}
             </span>
           </div>
+
+          {chosen.length > 0 && fit !== 'all' && (
+            <SplitOffer
+              placeId={placeId}
+              documentIds={isNarrowed ? chosen.map((d) => d.id) : undefined}
+              totalTokens={tokens}
+            />
+          )}
         </>
       )}
     </div>
   );
 }
 
-// ─── Choosing documents ───────────────────────────────────────────────────────
+// ─── Splitting a large package ────────────────────────────────────────────────
 
-interface ChooserProps {
-  contents: PackageContentsResponse;
-  selected: Set<string>;
-  onChange: (next: Set<string>) => void;
-}
+const SPLIT_MIN_TOKENS = 20_000;
+const SPLIT_STEP = 10_000;
 
-/** A checkbox per document, grouped under the jurisdiction it applies through. */
-function PackageChooser({ contents, selected, onChange }: ChooserProps) {
-  const bySource = useMemo(() => {
-    const groups = new Map<string, PackageContentsDocument[]>();
-    for (const doc of contents.documents) {
-      groups.set(doc.sourceId, [...(groups.get(doc.sourceId) ?? []), doc]);
+/**
+ * For packages too large to read in full: split into smaller files, with a slider for the size of
+ * each (smaller files, more of them), downloaded together as one .zip.
+ */
+function SplitOffer({
+  placeId,
+  documentIds,
+  totalTokens,
+}: {
+  placeId: string;
+  documentIds: string[] | undefined;
+  totalTokens: number;
+}) {
+  const sliderId = useId();
+  const max = Math.max(
+    SPLIT_MIN_TOKENS,
+    Math.min(LARGEST_ASSISTANTS_TOKENS, Math.ceil(totalTokens / SPLIT_STEP) * SPLIT_STEP),
+  );
+  const [size, setSize] = useState(Math.min(SPLIT_PART_TOKENS, max));
+  const debouncedSize = useDebounce(size, 300);
+  const [plan, setPlan] = useState<PackagePlanResponse | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [download, setDownload] = useState<DownloadState>({ state: 'idle' });
+  const idsKey = documentIds?.join(',') ?? '';
+
+  useEffect(() => {
+    if (size > max) setSize(max);
+  }, [size, max]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setPlanError(null);
+    setDownload({ state: 'idle' });
+    api
+      .planLibraryPackage(
+        {
+          jurisdictionId: placeId,
+          ...(idsKey ? { documentIds: idsKey.split(',') } : {}),
+          maxTokens: debouncedSize,
+        },
+        controller.signal,
+      )
+      .then(setPlan)
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted)
+          setPlanError(getErrorMessage(err, 'Could not plan the files.'));
+      });
+    return () => controller.abort();
+  }, [placeId, idsKey, debouncedSize]);
+
+  const count = plan?.parts.length ?? 0;
+  const isStale = debouncedSize !== size || !plan;
+
+  const save = async () => {
+    setDownload({ state: 'working' });
+    try {
+      const filename = await api.downloadLibraryPackage({
+        jurisdictionId: placeId,
+        ...(idsKey ? { documentIds: idsKey.split(',') } : {}),
+        split: { maxTokens: debouncedSize },
+      });
+      setDownload({ state: 'done', filename });
+    } catch (err) {
+      setDownload({ state: 'error', message: getErrorMessage(err, 'Could not build the files.') });
     }
-    return contents.sources
-      .map((source) => ({ source, docs: groups.get(source.id) ?? [] }))
-      .filter((g) => g.docs.length > 0);
-  }, [contents]);
-
-  const toggle = (id: string, on: boolean) => {
-    const next = new Set(selected);
-    if (on) next.add(id);
-    else next.delete(id);
-    onChange(next);
   };
 
   return (
-    <fieldset className="mt-3 border-t border-gray-300 pt-3 text-sm">
-      <legend className="sr-only">Documents to include</legend>
-      <div className="flex gap-4">
-        <button
-          type="button"
-          onClick={() => onChange(new Set(contents.documents.map((d) => d.id)))}
-          className="underline underline-offset-4 hover:no-underline"
-        >
-          Include everything
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(new Set())}
-          className="underline underline-offset-4 hover:no-underline"
-        >
-          Clear
-        </button>
-      </div>
-      {bySource.map(({ source, docs }) => (
-        <div key={source.id} className="mt-3">
-          <p className="text-xs uppercase tracking-wider text-gray-600">
-            {source.name} · {JURISDICTION_LEVEL_LABELS[source.level]}
-          </p>
-          <ul className="mt-1 space-y-1">
-            {docs.map((doc) => (
-              <li key={doc.id}>
-                <Checkbox checked={selected.has(doc.id)} onChange={(on) => toggle(doc.id, on)}>
-                  {doc.title}{' '}
-                  <span className="text-gray-600">
-                    (
-                    {doc.textStatus === 'ready'
-                      ? formatTokens(estimateDocumentTokens(doc.textChars))
-                      : doc.textStatus === 'pending'
-                        ? 'text still being read'
-                        : 'no readable text'}
-                    )
-                  </span>
-                </Checkbox>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </fieldset>
-  );
-}
+    <div className="mt-4 border-t border-gray-300 pt-4 text-sm">
+      <h3 className="text-base">Split it into smaller files</h3>
+      <p className="mt-1 text-gray-600">
+        Smaller files can each be read in full. Upload them together in a Claude Project or a
+        ChatGPT project, or one per chat; each file says which part holds what.
+      </p>
 
-function Checkbox({
-  checked,
-  onChange,
-  children,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="flex cursor-pointer items-start gap-2">
+      <label htmlFor={sliderId} className="mt-3 block">
+        Size of each file: <strong>{formatTokens(size)}</strong>
+      </label>
       <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-1 h-4 w-4 flex-shrink-0"
+        id={sliderId}
+        type="range"
+        min={SPLIT_MIN_TOKENS}
+        max={max}
+        step={SPLIT_STEP}
+        value={size}
+        onChange={(e) => setSize(Number(e.target.value))}
+        aria-valuetext={formatTokens(size)}
+        className="mt-1 w-full max-w-md accent-accent"
       />
-      <span>{children}</span>
-    </label>
+      <div className="flex max-w-md justify-between text-xs text-gray-600">
+        <span>Smaller files, more of them</span>
+        <span>Larger files, fewer of them</span>
+      </div>
+
+      <p className="mt-2" aria-live="polite">
+        {planError ??
+          (isStale ? (
+            'Working out the files…'
+          ) : (
+            <>
+              <strong>
+                {count} file{count === 1 ? '' : 's'}
+              </strong>
+              {count > 1 &&
+                ` of up to ${formatTokens(Math.max(...plan!.parts.map((p) => p.tokens)))}`}
+              {size > MOST_ASSISTANTS_TOKENS &&
+                ' · larger than most assistants read in full (about 100,000 tokens)'}
+            </>
+          ))}
+      </p>
+      {!isStale && count > 1 && (
+        <ol className="mt-1 list-inside list-decimal text-gray-600">
+          {plan!.parts.map((part, i) => (
+            <li key={i}>
+              {part.holds.map((h) => h.label).join(', ')} · {formatTokens(part.tokens)}
+            </li>
+          ))}
+        </ol>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={download.state === 'working' || isStale || count === 0}
+          className="inline-flex items-center gap-2 border border-accent px-4 py-2 text-accent hover:bg-accent hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-white"
+        >
+          {download.state === 'working' ? (
+            <LoadingSpinner size="sm" label="Building the files" />
+          ) : (
+            <Download className="h-4 w-4" aria-hidden="true" />
+          )}
+          {download.state === 'working'
+            ? 'Building…'
+            : count > 1
+              ? `Download all ${count} files (.zip)`
+              : 'Download as one file (.zip)'}
+        </button>
+        <span className="text-gray-600" aria-live="polite">
+          {download.state === 'done'
+            ? `Saved ${download.filename}. Unzip it, then upload the files.`
+            : download.state === 'error'
+              ? download.message
+              : null}
+        </span>
+      </div>
+    </div>
   );
 }

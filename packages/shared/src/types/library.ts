@@ -50,4 +50,18 @@ export interface PackageRequest {
   jurisdictionId: string;
   /** Only these documents (all applying documents when omitted). */
   documentIds?: string[];
+  /**
+   * Split into parts of at most about `maxTokens`: one part (0-based `part`), or every part as
+   * a .zip when `part` is omitted.
+   */
+  split?: { maxTokens: number; part?: number };
+}
+
+/** POST /api/library/package/plan: how a package splits into parts. */
+export interface PackagePlanResponse {
+  parts: {
+    tokens: number;
+    /** What the part holds, e.g. { label: "D3 ¶1201–2400", title: "Criminal Code" }. */
+    holds: { label: string; title: string }[];
+  }[];
 }

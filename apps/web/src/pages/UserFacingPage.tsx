@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, LocateFixed, MapPin, Search, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { LocateFixed, MapPin, Search, X } from 'lucide-react';
 import {
   JURISDICTION_LEVEL_LABELS,
   type JurisdictionSearchResult,
@@ -14,6 +14,7 @@ import { useAuthStore } from '../stores/authStore';
 import { describePath } from '../stores/jurisdictionStore';
 import { useDebounce } from '../hooks/useDebounce';
 import { AiPackagePanel } from '../components/library/AiPackagePanel';
+import { Switch } from '../components/common/Switch';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useDocumentTitle } from '../components/common/useDocumentTitle';
@@ -28,7 +29,8 @@ const PAGE_SIZE = 50;
  */
 export function UserFacingPage() {
   useDocumentTitle('User facing');
-  const { role, status, load } = useAccessStore();
+  // Signed in: learn whether to offer the Backend link in the header
+  const { status, load } = useAccessStore();
   const isSignedIn = useAuthStore((s) => s.status === 'authenticated');
   useEffect(() => {
     if (isSignedIn && status === 'idle') void load();
@@ -45,16 +47,6 @@ export function UserFacingPage() {
     <div className="min-h-screen bg-white">
       <SiteHeader />
       <main id="main-content" className="mx-auto max-w-4xl px-4 py-10 sm:py-12">
-        {/* Home is only for users with backend access; everyone else starts here */}
-        {isSignedIn && role && (
-          <Link
-            to="/"
-            className="mb-6 inline-flex items-center gap-1.5 text-sm underline underline-offset-4 hover:no-underline"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Home
-          </Link>
-        )}
         {placeId ? (
           <Results placeId={placeId} onChangeLocation={changeLocation} />
         ) : (
@@ -279,6 +271,17 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
 
   useEffect(() => setPage(1), [placeId, search]);
 
+  // Documents switched off for the AI package (all are included until switched off)
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  useEffect(() => setExcluded(new Set()), [placeId]);
+  const setIncluded = (id: string, include: boolean) =>
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (include) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   useEffect(() => {
     const controller = new AbortController();
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -362,7 +365,12 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
         </button>
       </div>
 
-      <AiPackagePanel placeId={place.id} placeName={place.name} />
+      <AiPackagePanel
+        placeId={place.id}
+        placeName={place.name}
+        excluded={excluded}
+        onIncludeAll={() => setExcluded(new Set())}
+      />
 
       <div className="relative mt-5">
         <label htmlFor="library-search" className="sr-only">
@@ -414,7 +422,12 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
           </h2>
           <ul className="divide-y divide-gray-300">
             {group.docs.map((doc) => (
-              <li key={doc.id} className="py-4">
+              <li
+                key={doc.id}
+                className={`flex flex-col gap-2 py-4 sm:flex-row sm:items-start sm:justify-between ${
+                  excluded.has(doc.id) ? 'opacity-60' : ''
+                }`}
+              >
                 <div className="min-w-0">
                   <h3 className="text-lg font-bold [font-variant-caps:normal]">{doc.title}</h3>
                   {doc.description && (
@@ -424,6 +437,12 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
                     <p className="mt-1 text-xs text-gray-600">{doc.tags.join(', ')}</p>
                   )}
                 </div>
+                <Switch
+                  checked={!excluded.has(doc.id)}
+                  onChange={(on) => setIncluded(doc.id, on)}
+                  label="In AI package"
+                  description={`Include “${doc.title}” in the AI package`}
+                />
               </li>
             ))}
           </ul>

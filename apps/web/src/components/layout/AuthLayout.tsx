@@ -1,4 +1,5 @@
 import React from 'react';
+import { Wordmark } from '../common/Wordmark';
 
 interface AuthLayoutProps {
   children: React.ReactNode;
@@ -16,7 +17,9 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           >
             §
           </div>
-          <h1 className="text-3xl font-bold tracking-wide text-black">Lex Terrae</h1>
+          <h1>
+            <Wordmark className="text-[3.25rem]" />
+          </h1>
           <p className="mx-auto mt-2 max-w-xs border-y border-black py-1 text-sm italic text-black">
             Canadian Legal Document Management
           </p>

@@ -4,8 +4,17 @@ import type {
   LibraryDocument,
   PackageContentsDocument,
   PackageContentsResponse,
+  PackagePlanResponse,
 } from '@lexterrae/shared';
-import { buildPackage, packageFilename, type PackageDocument } from '../lib/llm-package.js';
+import {
+  buildPackage,
+  describeSlice,
+  packageFilename,
+  planParts,
+  type PackageDocument,
+} from '../lib/llm-package.js';
+import { strToU8, zipSync } from 'fflate';
+import { ValidationError } from '../lib/errors.js';
 import type { Deps } from '../types.js';
 import * as jurisdictions from './jurisdiction.service.js';
 
@@ -157,11 +166,15 @@ export async function getPackageContents(
  * is in the backend now: every document that applies in the place, or the selection the person
  * narrowed it to, with full text.
  */
-export async function buildLibraryPackage(
-  deps: Deps,
-  request: { jurisdictionId: string; documentIds?: string[] },
-  now = new Date(),
-) {
+export interface LibraryPackageRequest {
+  jurisdictionId: string;
+  documentIds?: string[];
+  /** Split into parts of at most about this many tokens: one part, or all of them as a zip. */
+  split?: { maxTokens: number; part?: number };
+}
+
+/** Loads what a package for the place (or the chosen documents) holds, ready to build. */
+async function loadPackage(deps: Deps, request: Omit<LibraryPackageRequest, 'split'>) {
   const { ids, place, order } = await applicability(deps, request.jurisdictionId);
   const params: unknown[] = [ids];
   let selected = '';
@@ -218,9 +231,66 @@ export async function buildLibraryPackage(
     };
   });
 
-  const totalApplying = (count[0] as { n: number }).n;
+  return { place, docs, totalApplying: (count[0] as { n: number }).n };
+}
+
+const MARKDOWN = 'text/markdown; charset=utf-8';
+
+/** The whole package; or, when `split` is given, one part of it or every part as a zip. */
+export async function buildLibraryPackage(
+  deps: Deps,
+  request: LibraryPackageRequest,
+  now = new Date(),
+) {
+  const { place, docs, totalApplying } = await loadPackage(deps, request);
+  if (!request.split) {
+    return {
+      filename: packageFilename(place.name, now),
+      body: buildPackage(place, docs, now, { totalApplying }) as string | Uint8Array,
+      contentType: MARKDOWN,
+    };
+  }
+  const parts = planParts(docs, request.split.maxTokens);
+  const index = request.split.part;
+  if (index === undefined) {
+    // Every part, in one zip download
+    const files = Object.fromEntries(
+      parts.map((_, i) => [
+        packageFilename(place.name, now, { index: i, count: parts.length }),
+        strToU8(buildPackage(place, docs, now, { totalApplying }, { index: i, parts })),
+      ]),
+    );
+    return {
+      filename: packageFilename(place.name, now).replace(/\.md$/, `-${parts.length}-parts.zip`),
+      body: zipSync(files, { level: 6 }),
+      contentType: 'application/zip',
+    };
+  }
+  if (index >= parts.length) {
+    throw new ValidationError(
+      `The package has ${parts.length} parts; part ${index + 1} doesn't exist.`,
+    );
+  }
   return {
-    filename: packageFilename(place.name, now),
-    body: buildPackage(place, docs, now, { totalApplying }),
+    filename: packageFilename(place.name, now, { index, count: parts.length }),
+    body: buildPackage(place, docs, now, { totalApplying }, { index, parts }),
+    contentType: MARKDOWN,
+  };
+}
+
+/** How the package would be split into parts of at most about `maxTokens` each. */
+export async function planLibraryPackage(
+  deps: Deps,
+  request: Omit<LibraryPackageRequest, 'split'> & { maxTokens: number },
+): Promise<PackagePlanResponse> {
+  const { docs } = await loadPackage(deps, request);
+  return {
+    parts: planParts(docs, request.maxTokens).map((part) => ({
+      tokens: part.tokens,
+      holds: part.slices.map((slice) => ({
+        label: describeSlice(slice),
+        title: docs[slice.doc]!.title,
+      })),
+    })),
   };
 }
