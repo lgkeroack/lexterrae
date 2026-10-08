@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Bot, Download, LocateFixed, MapPin, Search, X } from 'lucide-react';
+import { ArrowLeft, LocateFixed, MapPin, Search, X } from 'lucide-react';
 import {
   JURISDICTION_LEVEL_LABELS,
   type JurisdictionSearchResult,
@@ -13,6 +13,7 @@ import { useAccessStore } from '../stores/accessStore';
 import { useAuthStore } from '../stores/authStore';
 import { describePath } from '../stores/jurisdictionStore';
 import { useDebounce } from '../hooks/useDebounce';
+import { AiPackagePanel } from '../components/library/AiPackagePanel';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useDocumentTitle } from '../components/common/useDocumentTitle';
@@ -361,8 +362,7 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
         </button>
       </div>
 
-      {/* While searching, the count shown is filtered; the package always holds everything */}
-      <AiPackage placeId={place.id} placeName={place.name} documentCount={search ? null : total} />
+      <AiPackagePanel placeId={place.id} placeName={place.name} />
 
       <div className="relative mt-5">
         <label htmlFor="library-search" className="sr-only">
@@ -443,82 +443,5 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
         </div>
       )}
     </section>
-  );
-}
-
-/**
- * The AI reference package: one file with every document that applies here, built from the
- * backend's current contents, to upload to Claude, ChatGPT or any other assistant.
- */
-function AiPackage({
-  placeId,
-  placeName,
-  documentCount,
-}: {
-  placeId: string;
-  placeName: string;
-  /** null while a search filters the list (the package still holds everything). */
-  documentCount: number | null;
-}) {
-  const [status, setStatus] = useState<
-    | { state: 'idle' }
-    | { state: 'working' }
-    | { state: 'done'; filename: string }
-    | { state: 'error'; message: string }
-  >({ state: 'idle' });
-
-  useEffect(() => setStatus({ state: 'idle' }), [placeId]);
-
-  const download = async () => {
-    setStatus({ state: 'working' });
-    try {
-      setStatus({ state: 'done', filename: await api.downloadLibraryPackage(placeId) });
-    } catch (err) {
-      setStatus({ state: 'error', message: getErrorMessage(err, 'Could not build the package.') });
-    }
-  };
-
-  return (
-    <div className="mt-5 border-2 border-accent p-4">
-      <h2 className="flex items-center gap-2 text-lg">
-        <Bot className="h-5 w-5" aria-hidden="true" />
-        Ask an AI about {placeName}
-      </h2>
-      <p className="mt-1 text-sm">
-        Download one file holding{' '}
-        {documentCount === null
-          ? `every document that applies in ${placeName}`
-          : documentCount === 1
-            ? 'the document below'
-            : `the ${documentCount} documents below`}
-        , then upload it to Claude, ChatGPT or another AI assistant. It tells the assistant to
-        answer only from these documents and to cite them, and it will begin by asking how it can
-        help regarding {placeName}.
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => void download()}
-          disabled={status.state === 'working' || documentCount === 0}
-          className="inline-flex items-center gap-2 border border-accent bg-accent px-4 py-2 text-sm text-white hover:border-accent-dark hover:bg-accent-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:border-gray-300 disabled:bg-gray-300"
-        >
-          {status.state === 'working' ? (
-            <LoadingSpinner size="sm" label="Building the package" />
-          ) : (
-            <Download className="h-4 w-4" aria-hidden="true" />
-          )}
-          {status.state === 'working' ? 'Building…' : 'Download AI reference package'}
-        </button>
-        <span className="text-sm text-gray-600" aria-live="polite">
-          {documentCount === 0
-            ? 'Nothing applies here yet.'
-            : status.state === 'done'
-              ? `Saved ${status.filename}.`
-              : status.state === 'error'
-                ? status.message
-                : 'Markdown file (.md), made from the current documents.'}
-        </span>
-      </div>
-    </div>
   );
 }

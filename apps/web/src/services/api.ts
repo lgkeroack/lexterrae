@@ -21,6 +21,8 @@ import type {
   BackendRole,
   GrantAccessRequest,
   LibraryResponse,
+  PackageContentsResponse,
+  PackageRequest,
 } from '@lexterrae/shared';
 
 const BASE_URL = '/api';
@@ -544,14 +546,26 @@ export const api = {
     return request<LibraryResponse>(`/library/documents?${query}`, { signal });
   },
 
+  /** What an AI package for a place can hold, with sizes (optionally only documents on a topic). */
+  async getPackageContents(
+    jurisdictionId: string,
+    search?: string,
+    signal?: AbortSignal,
+  ): Promise<PackageContentsResponse> {
+    const query = new URLSearchParams({ jurisdictionId });
+    if (search) query.set('search', search);
+    return request<PackageContentsResponse>(`/library/package/contents?${query}`, { signal });
+  },
+
   /**
-   * Downloads the AI reference package for a place: a Markdown file with every document that
-   * applies there, to upload to Claude, ChatGPT or another assistant. Returns the filename.
+   * Downloads the AI reference package for a place (all applying documents, or the chosen ones):
+   * a Markdown file to upload to Claude, ChatGPT or another assistant. Returns the filename.
    */
-  async downloadLibraryPackage(jurisdictionId: string): Promise<string> {
-    const res = await authFetch(
-      `/library/package?jurisdictionId=${encodeURIComponent(jurisdictionId)}`,
-    );
+  async downloadLibraryPackage(input: PackageRequest): Promise<string> {
+    const res = await authFetch('/library/package', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
     if (!res.ok) throw await parseErrorResponse(res);
     const disposition = res.headers.get('Content-Disposition') ?? '';
     const filename = /filename="([^"]+)"/.exec(disposition)?.[1] ?? 'lex-terrae-package.md';

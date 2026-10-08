@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { estimatePackageTokens, formatTokens, packageFit } from '@lexterrae/shared';
 import { buildPackage, packageFilename, paragraphs, type PackageDocument } from './llm-package.js';
 
 const place = {
@@ -74,6 +75,39 @@ describe('buildPackage', () => {
   it('still instructs the assistant when nothing applies', () => {
     const empty = buildPackage(place, [], at);
     expect(empty).toContain('No documents in Lex Terrae apply in Squamish yet');
+  });
+});
+
+describe('narrowed packages and size', () => {
+  const at = new Date('2026-10-07T12:00:00Z');
+
+  it('tells the assistant when it holds only a selection', () => {
+    const text = buildPackage(place, [doc('Noise By-law', 'Quiet hours.', 'Squamish')], at, {
+      totalApplying: 12,
+      topic: 'noise',
+    });
+    expect(text).toContain('Contains 1 of the 12 documents that apply in Squamish');
+    expect(text).toContain('chosen for the topic "noise"');
+    expect(text).toContain('say that this package may not cover it');
+    expect(text).not.toContain('Treat them as complete');
+  });
+
+  it('states its approximate size', () => {
+    const text = buildPackage(place, [doc('By-law', 'x'.repeat(40_000), 'Squamish')], at);
+    expect(text).toMatch(/Size: about 1[0-9],[0-9]00 tokens\./);
+    expect(text).not.toContain('\u0000');
+  });
+});
+
+describe('size estimates', () => {
+  it('estimates tokens and how widely a package can be read in full', () => {
+    expect(estimatePackageTokens([])).toBe(1200);
+    expect(estimatePackageTokens([{ textChars: 400_000 }])).toBe(1200 + 105_100);
+    expect(packageFit(80_000)).toBe('all');
+    expect(packageFit(500_000)).toBe('largest');
+    expect(packageFit(2_000_000)).toBe('none');
+    expect(formatTokens(1_234_567)).toBe('about 1.2 million tokens');
+    expect(formatTokens(45_678)).toBe('about 46,000 tokens');
   });
 });
 

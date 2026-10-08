@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { optionalAuthenticate } from '../middleware/auth.js';
 import { generalLimiter, searchLimiter } from '../middleware/rate-limit.js';
-import { validQuery } from '../middleware/validate.js';
+import { validJson, validQuery } from '../middleware/validate.js';
 import * as library from '../services/library.service.js';
 import type { AppEnv } from '../types.js';
 
@@ -33,19 +33,43 @@ router.get('/documents', searchLimiter, async (c) => {
   return c.json(await library.listLibrary(c.get('deps'), query), 200);
 });
 
+const jurisdictionIdSchema = z
+  .string({ required_error: 'Choose a location (jurisdictionId)' })
+  .uuid('jurisdictionId must be a jurisdiction UUID');
+
+const contentsSchema = z.object({
+  jurisdictionId: jurisdictionIdSchema,
+  search: z.preprocess(emptyToUndefined, z.string().trim().max(200).optional()),
+});
+
 const packageSchema = z.object({
-  jurisdictionId: z
-    .string({ required_error: 'Choose a location (jurisdictionId)' })
-    .uuid('jurisdictionId must be a jurisdiction UUID'),
+  jurisdictionId: jurisdictionIdSchema,
+  documentIds: z
+    .array(z.string().uuid('documentIds must be document UUIDs'))
+    .min(1, 'Choose at least one document')
+    .max(500)
+    .optional(),
+  topic: z.string().trim().max(100).optional(),
 });
 
 /**
- * GET /api/library/package?jurisdictionId= — a Markdown file for AI assistants holding every
- * document that applies in the place, built from the backend's current contents.
+ * GET /api/library/package/contents?jurisdictionId=&search= — the documents an AI package for
+ * the place can hold, with their sizes, so the page can estimate it and let people narrow it.
  */
-router.get('/package', searchLimiter, async (c) => {
-  const { jurisdictionId } = validQuery(c, packageSchema);
-  const { filename, body } = await library.buildLibraryPackage(c.get('deps'), jurisdictionId);
+router.get('/package/contents', searchLimiter, async (c) => {
+  const { jurisdictionId, search } = validQuery(c, contentsSchema);
+  c.header('Cache-Control', 'private, no-store');
+  return c.json(await library.getPackageContents(c.get('deps'), jurisdictionId, search), 200);
+});
+
+/**
+ * POST /api/library/package { jurisdictionId, documentIds?, topic? } — a Markdown file for AI
+ * assistants holding the documents that apply in the place (or the chosen ones), built from the
+ * backend's current contents.
+ */
+router.post('/package', searchLimiter, async (c) => {
+  const input = await validJson(c, packageSchema);
+  const { filename, body } = await library.buildLibraryPackage(c.get('deps'), input);
   return c.body(body, 200, {
     'Content-Type': 'text/markdown; charset=utf-8',
     'Content-Disposition': `attachment; filename="${filename}"`,

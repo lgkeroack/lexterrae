@@ -1,4 +1,9 @@
-import { JURISDICTION_LEVEL_LABELS, type JurisdictionLevel } from '@lexterrae/shared';
+import {
+  CHARS_PER_TOKEN,
+  JURISDICTION_LEVEL_LABELS,
+  formatTokens,
+  type JurisdictionLevel,
+} from '@lexterrae/shared';
 
 /**
  * Builds the reference package for AI assistants: one Markdown file a person uploads to Claude,
@@ -78,10 +83,18 @@ function neutralize(text: string): string {
   return text.replace(/<<<(\s*(?:BEGIN|END))/gi, '‹‹‹$1');
 }
 
+export interface PackageSelection {
+  /** Documents that apply in the place in total; more than are in the package when narrowed. */
+  totalApplying: number;
+  /** The topic the person narrowed the package to, if any. */
+  topic?: string;
+}
+
 export function buildPackage(
   place: PackagePlace,
   docs: PackageDocument[],
   generatedAt: Date,
+  selection: PackageSelection = { totalApplying: docs.length },
 ): string {
   const where = placeLine(place.name, place.path);
   const kind = place.subtype ?? JURISDICTION_LEVEL_LABELS[place.level];
@@ -93,12 +106,17 @@ export function buildPackage(
   ].filter((n, i, all) => all.indexOf(n) === i);
   const firstQuestion = `How can I help you regarding ${place.name}?`;
   const withText = docs.filter((d) => d.contentText);
+  const narrowed = docs.length < selection.totalApplying;
+  const topic = selection.topic?.replace(/\s+/g, ' ').trim();
+  const contains = narrowed
+    ? `Contains ${docs.length} of the ${selection.totalApplying} documents that apply in ${place.name}, selected by the person who downloaded it${topic ? ` for the topic "${topic}"` : ''}.`
+    : `Contains ${docs.length} document${docs.length === 1 ? '' : 's'} that apply in ${place.name}.`;
 
   const out: string[] = [];
   out.push(
     `# Lex Terrae reference package: ${where}`,
     '',
-    `Generated ${date} by Lex Terrae. Contains ${docs.length} document${docs.length === 1 ? '' : 's'} that apply in ${place.name}.`,
+    `Generated ${date} by Lex Terrae. ${contains} Size: ${SIZE_PLACEHOLDER}.`,
     '',
     '## Instructions for the AI assistant',
     '',
@@ -112,7 +130,9 @@ export function buildPackage(
     '',
     '### 2. Your only source',
     '',
-    `- The documents in this package are the entire universe of information you may use. Treat them as complete for ${place.name}.`,
+    narrowed
+      ? `- The documents in this package are the entire universe of information you may use. They are a selection: ${docs.length} of the ${selection.totalApplying} documents that apply in ${place.name}${topic ? `, chosen for the topic "${topic}"` : ''}. Other documents that apply there are not included, so when an answer could depend on them, say that this package may not cover it.`
+      : `- The documents in this package are the entire universe of information you may use. Treat them as complete for ${place.name}.`,
     '- Never use your general knowledge, training data, the internet, other uploaded files or earlier conversations to answer, and never fill gaps with assumptions, even when you believe you know the answer.',
     '- If the documents do not answer a question, say so plainly: "The documents in this package do not address this." Then, where it helps, name the kind of document that would, without answering from memory.',
     '- If the documents only partly answer, answer that part and state clearly what is not covered.',
@@ -207,8 +227,11 @@ export function buildPackage(
     `End of the Lex Terrae reference package for ${where}. Remember: answer only from the documents above, cite them as [D# ¶#], and begin by asking "${firstQuestion}"`,
     '',
   );
-  return out.filter((line, i, all) => !(line === '' && all[i - 1] === '')).join('\n');
+  const body = out.filter((line, i, all) => !(line === '' && all[i - 1] === '')).join('\n');
+  return body.replace(SIZE_PLACEHOLDER, formatTokens(Math.ceil(body.length / CHARS_PER_TOKEN)));
 }
+
+const SIZE_PLACEHOLDER = '\u0000SIZE\u0000';
 
 function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
