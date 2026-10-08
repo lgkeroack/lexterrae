@@ -22,6 +22,7 @@ import type {
   GrantAccessRequest,
   LibraryResponse,
   PackageContentsResponse,
+  PackagePlanResponse,
   PackageRequest,
 } from '@lexterrae/shared';
 
@@ -553,6 +554,18 @@ export const api = {
   ): Promise<PackageContentsResponse> {
     const query = new URLSearchParams({ jurisdictionId });
     return request<PackageContentsResponse>(`/library/package/contents?${query}`, { signal });
+  },
+
+  /** How an AI package splits into parts of at most about `maxTokens` each. */
+  async planLibraryPackage(
+    input: Omit<PackageRequest, 'split'> & { maxTokens: number },
+    signal?: AbortSignal,
+  ): Promise<PackagePlanResponse> {
+    return request<PackagePlanResponse>('/library/package/plan', {
+      method: 'POST',
+      body: JSON.stringify(input),
+      signal,
+    });
   },
 
   /**

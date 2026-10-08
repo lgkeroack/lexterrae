@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { estimatePackageTokens, formatTokens, packageFit } from '@lexterrae/shared';
-import { buildPackage, packageFilename, paragraphs, type PackageDocument } from './llm-package.js';
+import {
+  buildPackage,
+  describeSlice,
+  packageFilename,
+  paragraphs,
+  planParts,
+  type PackageDocument,
+} from './llm-package.js';
 
 const place = {
   name: 'Squamish',
@@ -110,6 +117,53 @@ describe('size estimates', () => {
     expect(packageFit(2_000_000)).toBe('none');
     expect(formatTokens(1_234_567)).toBe('about 1.2 million tokens');
     expect(formatTokens(45_678)).toBe('about 46,000 tokens');
+  });
+});
+
+describe('split packages', () => {
+  const at = new Date('2026-10-07T12:00:00Z');
+  // 300 paragraphs of ~400 characters: about 31,000 tokens
+  const big = Array.from({ length: 300 }, (_, i) => `Section ${i + 1}. ${'x'.repeat(390)}`).join(
+    '\n\n',
+  );
+  const docs = [
+    doc('Noise By-law', 'Quiet hours.\n\nFines.', 'Squamish'),
+    doc('Criminal Code', big, 'Canada'),
+    doc('Scanned map', null, 'Squamish'),
+  ];
+  const parts = planParts(docs, 12_000);
+
+  it('keeps every part under the limit and every paragraph in exactly one part', () => {
+    expect(parts.length).toBe(4);
+    expect(parts.every((p) => p.tokens <= 12_000)).toBe(true);
+    const code = parts.flatMap((p) => p.slices.filter((s) => s.doc === 1));
+    expect(code[0]!.from).toBe(1);
+    expect(code.at(-1)!.to).toBe(300);
+    code.slice(1).forEach((s, i) => expect(s.from).toBe(code[i]!.to + 1));
+    expect(parts[0]!.slices.map(describeSlice)).toEqual(['D1', `D2 ¶1–${code[0]!.to}`]);
+    expect(parts.at(-1)!.slices.map(describeSlice).at(-1)).toBe('D3');
+  });
+
+  it('keeps a single part when everything fits', () => {
+    expect(planParts(docs, 200_000)).toHaveLength(1);
+  });
+
+  it('builds each part with its own share, the shared contents and directions to the others', () => {
+    const second = buildPackage(place, docs, at, { totalApplying: 3 }, { index: 1, parts });
+    expect(second).toContain('(part 2 of 4)');
+    expect(second).toContain('| D1 | Noise By-law | Squamish | Municipal | 2 paragraphs | 1 |');
+    expect(second).toContain('| 300 paragraphs | 1, 2, 3, 4 |');
+    expect(second).toContain('name the part to upload');
+    const slice = parts[1]!.slices[0]!;
+    expect(second).toContain(`[D2 ¶${slice.from}] Section ${slice.from}.`);
+    expect(second).toContain(`[D2 ¶${slice.to}] Section ${slice.to}.`);
+    expect(second).not.toContain(`[D2 ¶${slice.to + 1}]`);
+    expect(second).not.toContain('[D1 ¶1]');
+    expect(second).toContain('the rest of D2 is in part 1, 3, 4');
+    expect(Math.ceil(second.length / 4)).toBeLessThanOrEqual(12_000);
+    expect(packageFilename('Squamish', at, { index: 1, count: 3 })).toBe(
+      'lex-terrae-squamish-2026-10-07-part-2-of-3.md',
+    );
   });
 });
 

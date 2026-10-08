@@ -39,13 +39,35 @@ const jurisdictionIdSchema = z
 
 const contentsSchema = z.object({ jurisdictionId: jurisdictionIdSchema });
 
+const documentIdsSchema = z
+  .array(z.string().uuid('documentIds must be document UUIDs'))
+  .min(1, 'Choose at least one document')
+  .max(500)
+  .optional();
+
+const maxTokensSchema = z.number().int().min(20_000).max(2_000_000);
+
 const packageSchema = z.object({
   jurisdictionId: jurisdictionIdSchema,
-  documentIds: z
-    .array(z.string().uuid('documentIds must be document UUIDs'))
-    .min(1, 'Choose at least one document')
-    .max(500)
+  documentIds: documentIdsSchema,
+  split: z
+    .object({ maxTokens: maxTokensSchema, part: z.number().int().min(0).max(999).optional() })
     .optional(),
+});
+
+const planSchema = z.object({
+  jurisdictionId: jurisdictionIdSchema,
+  documentIds: documentIdsSchema,
+  maxTokens: maxTokensSchema,
+});
+
+/**
+ * POST /api/library/package/plan { jurisdictionId, documentIds?, maxTokens } — how the package
+ * splits into parts of at most about maxTokens, for assistants that can't read it whole.
+ */
+router.post('/package/plan', searchLimiter, async (c) => {
+  const input = await validJson(c, planSchema);
+  return c.json(await library.planLibraryPackage(c.get('deps'), input), 200);
 });
 
 /**
@@ -59,15 +81,15 @@ router.get('/package/contents', searchLimiter, async (c) => {
 });
 
 /**
- * POST /api/library/package { jurisdictionId, documentIds? } — a Markdown file for AI
+ * POST /api/library/package { jurisdictionId, documentIds?, split? } — a Markdown file for AI
  * assistants holding the documents that apply in the place (or the chosen ones), built from the
  * backend's current contents.
  */
 router.post('/package', searchLimiter, async (c) => {
   const input = await validJson(c, packageSchema);
-  const { filename, body } = await library.buildLibraryPackage(c.get('deps'), input);
-  return c.body(body, 200, {
-    'Content-Type': 'text/markdown; charset=utf-8',
+  const { filename, body, contentType } = await library.buildLibraryPackage(c.get('deps'), input);
+  return c.body(typeof body === 'string' ? body : body.slice().buffer, 200, {
+    'Content-Type': contentType,
     'Content-Disposition': `attachment; filename="${filename}"`,
     'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "default-src 'none'",
