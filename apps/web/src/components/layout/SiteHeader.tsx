@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { FolderOpen, LogIn, LogOut } from 'lucide-react';
 import { useAccessStore } from '../../stores/accessStore';
 import { useAuthStore } from '../../stores/authStore';
+import { Wordmark } from '../common/Wordmark';
 import { useUndoStore } from '../../stores/undoStore';
 
 const linkClass =
@@ -25,9 +26,7 @@ export function SiteHeader() {
         <span className="text-2xl font-bold leading-none" aria-hidden="true">
           §
         </span>
-        <span className="text-xl font-bold tracking-wide text-black [font-variant-caps:small-caps]">
-          Lex Terrae
-        </span>
+        <Wordmark className="text-3xl" />
       </Link>
       <div className="ml-auto flex min-w-0 items-center gap-4">
         {isSignedIn && hasBackend && (

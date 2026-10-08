@@ -4,6 +4,7 @@ import { FileText, Upload, LogOut, Menu, Users, X } from 'lucide-react';
 import { useAccessStore } from '../../stores/accessStore';
 import { useAuthStore } from '../../stores/authStore';
 import { formatTitle } from '../common/useDocumentTitle';
+import { Wordmark } from '../common/Wordmark';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { UndoToast } from '../common/UndoToast';
 import { useUndoStore } from '../../stores/undoStore';
@@ -127,9 +128,7 @@ export function AppLayout() {
               <span className="text-2xl font-bold leading-none" aria-hidden="true">
                 §
               </span>
-              <span className="text-xl font-bold tracking-wide text-black [font-variant-caps:small-caps]">
-                Lex Terrae
-              </span>
+              <Wordmark className="text-3xl" />
             </Link>
             {/* Close button for mobile */}
             <button
@@ -220,9 +219,7 @@ export function AppLayout() {
             <span className="text-xl font-bold leading-none" aria-hidden="true">
               §
             </span>
-            <span className="text-lg font-bold tracking-wide text-black [font-variant-caps:small-caps]">
-              Lex Terrae
-            </span>
+            <Wordmark className="text-2xl" />
           </Link>
         </header>
 

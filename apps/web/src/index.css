@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Highcrest by Letterara, cut down to the letters of the "Lex terrae" wordmark */
+@font-face {
+  font-family: 'Highcrest';
+  src: url('/fonts/highcrest-wordmark.woff2') format('woff2');
+  font-display: swap;
+}
+
 @layer base {
   html {
     font-family: theme('fontFamily.serif');

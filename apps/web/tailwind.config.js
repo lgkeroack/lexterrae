@@ -76,6 +76,8 @@ export default {
       sans: serif,
       serif,
       mono: ['"Courier New"', 'Courier', 'monospace'],
+      // The "Lex terrae" wordmark (public/fonts: only the letters it uses)
+      brand: ['Highcrest', ...serif],
     },
     // Times reads small; nudge the text scale up a step
     fontSize: {
