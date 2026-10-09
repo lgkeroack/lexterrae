@@ -5,6 +5,7 @@ import { useAccessStore } from '../../stores/accessStore';
 import { useAuthStore } from '../../stores/authStore';
 import { formatTitle } from '../common/useDocumentTitle';
 import { Wordmark } from '../common/Wordmark';
+import { SiteFooter } from './SiteFooter';
 import { LoadingSpinner } from '../common/LoadingSpinner';
 import { UndoToast } from '../common/UndoToast';
 import { useUndoStore } from '../../stores/undoStore';
@@ -230,16 +231,21 @@ export function AppLayout() {
           tabIndex={-1}
           className="flex-1 overflow-auto p-4 focus:outline-none sm:p-6"
         >
-          {/* Keep the shell mounted while a lazy page chunk loads. */}
-          <Suspense
-            fallback={
-              <div className="flex h-64 items-center justify-center">
-                <LoadingSpinner size="lg" />
-              </div>
-            }
-          >
-            <Outlet />
-          </Suspense>
+          <div className="flex min-h-full flex-col">
+            <div className="flex-1">
+              {/* Keep the shell mounted while a lazy page chunk loads. */}
+              <Suspense
+                fallback={
+                  <div className="flex h-64 items-center justify-center">
+                    <LoadingSpinner size="lg" />
+                  </div>
+                }
+              >
+                <Outlet />
+              </Suspense>
+            </div>
+            <SiteFooter className="-mx-4 -mb-4 mt-8 sm:-mx-6 sm:-mb-6" />
+          </div>
         </main>
         <UndoToast />
       </div>

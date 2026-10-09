@@ -15,6 +15,7 @@ import { describePath } from '../stores/jurisdictionStore';
 import { useDebounce } from '../hooks/useDebounce';
 import { AiPackagePanel } from '../components/library/AiPackagePanel';
 import { Switch } from '../components/common/Switch';
+import { SiteFooter } from '../components/layout/SiteFooter';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useDocumentTitle } from '../components/common/useDocumentTitle';
@@ -44,7 +45,7 @@ export function UserFacingPage() {
   const changeLocation = () => setParams({});
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex min-h-screen flex-col bg-white">
       <SiteHeader />
       <main id="main-content" className="mx-auto max-w-4xl px-4 py-10 sm:py-12">
         {placeId ? (
@@ -53,6 +54,7 @@ export function UserFacingPage() {
           <LocationPicker onChoose={choose} />
         )}
       </main>
+      <SiteFooter className="mt-auto" />
     </div>
   );
 }
