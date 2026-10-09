@@ -14,8 +14,9 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { geoArea } from 'd3';
 import polygonClipping from 'polygon-clipping';
-import { feature as toGeoJSON } from 'topojson-client';
 import { topology } from 'topojson-server';
+import { HOLE_LIMITS, QUANTIZATION, SIMPLIFY } from './build-province-maps-config.mjs';
+import { cleanFeatures, fixWinding, multi, rewind } from './map-geometry.mjs';
 
 const CSD_SERVICE =
   'https://geo.statcan.gc.ca/geo_wa/rest/services/2025/lcsd000a25s_e/MapServer/0/query';
@@ -38,9 +39,6 @@ const PROVINCES = {
   NU: '62',
 };
 
-/** About 1 km: vertices the server may move when simplifying (0.01° of latitude ≈ 1.1 km). */
-const SIMPLIFY = 0.01;
-const QUANTIZATION = 3e4;
 /** Islands smaller than this share of the province's land are left out. */
 const MIN_ISLAND_SHARE = 0.00005;
 const PAGE_SIZE = 250;
@@ -83,20 +81,6 @@ async function fetchSubdivisions(pruid, simplify) {
 }
 
 /** Polygon coordinates as a MultiPolygon coordinate array. */
-function multi(geometry) {
-  if (!geometry) return [];
-  return geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
-}
-
-/** d3 expects the opposite ring winding to RFC 7946; flip any polygon that covers the globe. */
-function rewind(polygons) {
-  return polygons.map((coords) =>
-    geoArea({ type: 'Polygon', coordinates: coords }) > 2 * Math.PI
-      ? coords.map((ring) => [...ring].reverse())
-      : coords,
-  );
-}
-
 const normalize = (s) =>
   s
     .normalize('NFD')
@@ -105,34 +89,6 @@ const normalize = (s) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
-
-/**
- * Quantization can flip the orientation of tiny rings. Enforce d3's convention ring by ring, in
- * arc-index form: an outer ring encloses less than a hemisphere, a hole more (reversing a ring
- * means reversing its arc list and complementing each index).
- */
-function fixWinding(topo) {
-  const hemisphere = 2 * Math.PI;
-  for (const object of Object.values(topo.objects)) {
-    for (const geometry of object.geometries) {
-      const polygons =
-        geometry.type === 'Polygon'
-          ? [geometry.arcs]
-          : geometry.type === 'MultiPolygon'
-            ? geometry.arcs
-            : [];
-      for (const rings of polygons) {
-        rings.forEach((ring, i) => {
-          const area = geoArea(toGeoJSON(topo, { type: 'Polygon', arcs: [ring] }));
-          const isHole = i > 0;
-          if (isHole ? area < hemisphere : area > hemisphere) {
-            rings[i] = [...ring].reverse().map((arc) => ~arc);
-          }
-        });
-      }
-    }
-  }
-}
 
 const LEVEL_KEY = { regional: 'r', municipal: 'm', indigenous: 'i' };
 
@@ -227,10 +183,17 @@ async function buildProvince(code, records) {
     });
   }
 
+  // Drop the triangles, slivers and specks simplification leaves (see map-geometry.mjs)
   const topo = topology(
     {
-      regions: { type: 'FeatureCollection', features: regions },
-      local: { type: 'FeatureCollection', features: local },
+      regions: {
+        type: 'FeatureCollection',
+        features: cleanFeatures(regions, HOLE_LIMITS.regions).features,
+      },
+      local: {
+        type: 'FeatureCollection',
+        features: cleanFeatures(local, HOLE_LIMITS.local).features,
+      },
     },
     QUANTIZATION,
   );

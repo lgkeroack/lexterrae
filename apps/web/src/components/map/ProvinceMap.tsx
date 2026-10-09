@@ -14,6 +14,14 @@ type Shape = Feature<Polygon | MultiPolygon, ShapeProps>;
 
 const WIDTH = 800;
 const MAX_HEIGHT = 560;
+/**
+ * Shapes smaller than this on screen (px) are too small to outline: once zoomed in (or when
+ * selected) they show as a dot, otherwise they're left out so the map stays clean.
+ */
+const MIN_VISIBLE_PX = 6;
+const DOT_RADIUS_PX = 2.5;
+const DOTS_FROM_ZOOM = 2;
+
 const LEVEL_NAMES = { r: 'Regional', m: 'Municipal', i: 'Indigenous' } as const;
 
 interface ProvinceMapProps {
@@ -65,12 +73,13 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
     };
   }, [provinceCode]);
 
-  const { shapes, height, paths, labelAnchors } = useMemo(() => {
+  const { shapes, height, paths, sizes, labelAnchors } = useMemo(() => {
     if (!topo) {
       return {
         shapes: [] as Shape[],
         height: 400,
         paths: [] as string[],
+        sizes: [] as { extent: number; x: number; y: number }[],
         labelAnchors: new Map<string, { name: string; x: number; y: number }>(),
       };
     }
@@ -140,10 +149,19 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
     const [cx, cy] = path.centroid(all);
     labelAnchors.set('__province__', { name: '', x: cx, y: cy });
 
+    // Size of each shape on screen at 1× zoom, and where to put its dot when it's too small to see
+    const sizes = current.features.map((f) => {
+      const [[x0, y0b], [x1, y1b]] = path.bounds(f);
+      const anchor = f.properties.c ? labelAnchors.get(f.properties.c) : undefined;
+      const [px, py] = anchor ? [anchor.x, anchor.y] : path.centroid(f);
+      return { extent: Math.max(x1 - x0, y1b - y0b), x: px, y: py };
+    });
+
     return {
       shapes: current.features,
       height: h,
       paths: current.features.map((f) => path(f) ?? ''),
+      sizes,
       labelAnchors,
     };
   }, [topo, layer]);
@@ -277,37 +295,71 @@ export function ProvinceMap({ provinceCode, provinceName, items, disabled }: Pro
             onMouseLeave={() => setHover(null)}
           >
             <g ref={groupRef}>
-              {shapes.map((shape, i) => {
-                const code = shape.properties.c;
-                const linked = Boolean(code && itemsByCode.has(code));
-                const isSelected = disabled || (code ? selected.has(code) : false);
-                const isHover = hover?.shape === shape;
+              {(() => {
+                const fillOf = (linked: boolean, isSelected: boolean, isHover: boolean) =>
+                  !linked
+                    ? '#F2F2F2'
+                    : isSelected
+                      ? isHover
+                        ? 'rgba(10, 54, 120, 0.5)'
+                        : 'rgba(10, 54, 120, 0.3)'
+                      : isHover
+                        ? '#D6D6D6'
+                        : '#FFFFFF';
+                const outlines: React.ReactNode[] = [];
+                const dots: React.ReactNode[] = [];
+                // Largest first, so a small enclave is drawn on top of the area around it
+                const order = shapes
+                  .map((_, i) => i)
+                  .sort((a, b) => sizes[b]!.extent - sizes[a]!.extent);
+                order.forEach((i) => {
+                  const shape = shapes[i]!;
+                  const code = shape.properties.c;
+                  const linked = Boolean(code && itemsByCode.has(code));
+                  const isSelected = disabled || (code ? selected.has(code) : false);
+                  const isHover = hover?.shape === shape;
+                  const common = {
+                    stroke: linked ? '#000000' : '#BDBDBD',
+                    strokeWidth: (isHover || isSelected) && linked ? 1.2 : 0.6,
+                    vectorEffect: 'non-scaling-stroke' as const,
+                    className: linked && !disabled ? 'cursor-pointer' : undefined,
+                    onClick: () => pick(shape),
+                    onMouseMove: (e: React.MouseEvent) => showTooltip(shape, e),
+                  };
+                  const size = sizes[i]!;
+                  if (size.extent * scale >= MIN_VISIBLE_PX) {
+                    outlines.push(
+                      <path
+                        key={`${layer}-${i}`}
+                        d={paths[i]}
+                        // Translucent selection keeps the borders inside a selected area visible
+                        fill={fillOf(linked, isSelected, isHover)}
+                        strokeLinejoin="round"
+                        {...common}
+                      />,
+                    );
+                  } else if (linked && (isSelected || scale >= DOTS_FROM_ZOOM)) {
+                    // Too small to outline at this zoom: a dot, drawn on top so it stays clickable
+                    dots.push(
+                      <circle
+                        key={`${layer}-${i}`}
+                        cx={size.x}
+                        cy={size.y}
+                        r={DOT_RADIUS_PX / scale}
+                        fill={isSelected ? '#0A3678' : isHover ? '#D6D6D6' : '#FFFFFF'}
+                        {...common}
+                      />,
+                    );
+                  }
+                  // Unselectable specks (no jurisdiction) are left out until they're big enough
+                });
                 return (
-                  <path
-                    key={`${layer}-${i}`}
-                    d={paths[i]}
-                    // Translucent selection keeps the borders inside a selected area visible
-                    fill={
-                      !linked
-                        ? '#F2F2F2'
-                        : isSelected
-                          ? isHover
-                            ? 'rgba(10, 54, 120, 0.5)'
-                            : 'rgba(10, 54, 120, 0.3)'
-                          : isHover
-                            ? '#D6D6D6'
-                            : '#FFFFFF'
-                    }
-                    stroke={linked ? '#000000' : '#BDBDBD'}
-                    strokeWidth={(isHover || isSelected) && linked ? 1.2 : 0.6}
-                    vectorEffect="non-scaling-stroke"
-                    strokeLinejoin="round"
-                    className={linked && !disabled ? 'cursor-pointer' : undefined}
-                    onClick={() => pick(shape)}
-                    onMouseMove={(e) => showTooltip(shape, e)}
-                  />
+                  <>
+                    {outlines}
+                    {dots}
+                  </>
                 );
-              })}
+              })()}
 
               {/* Names of the selected areas (or the province when all of it is selected) */}
               <g aria-hidden="true" className="pointer-events-none select-none">
