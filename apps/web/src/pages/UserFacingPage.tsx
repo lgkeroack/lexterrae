@@ -429,7 +429,7 @@ function Results({ placeId, onChangeLocation }: { placeId: string; onChangeLocat
                 }`}
               >
                 <div className="min-w-0">
-                  <h3 className="text-lg font-bold [font-variant-caps:normal]">{doc.title}</h3>
+                  <h3 className="text-lg font-bold">{doc.title}</h3>
                   {doc.description && (
                     <p className="mt-1 line-clamp-3 text-sm">{doc.description}</p>
                   )}

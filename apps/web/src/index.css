@@ -21,12 +21,10 @@
     font-variant-ligatures: common-ligatures;
   }
 
-  /* Legal-document headings: small capitals, slightly spaced */
+  /* Headings: bold, in normal capitalization */
   h1,
   h2,
   h3 {
-    font-variant-caps: small-caps;
-    letter-spacing: 0.04em;
     font-weight: 700;
   }
 
