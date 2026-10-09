@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
+import { SiteFooter } from '../components/layout/SiteFooter';
 import { SiteHeader } from '../components/layout/SiteHeader';
 import { useDocumentTitle } from '../components/common/useDocumentTitle';
 
@@ -20,7 +21,7 @@ const sections: { to: string; title: string; description: string; note?: string 
 export function HomePage() {
   useDocumentTitle('Home');
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex min-h-screen flex-col bg-white">
       <SiteHeader />
       <main id="main-content" className="mx-auto max-w-3xl px-4 py-12 sm:py-16">
         <h1 className="border-b border-black pb-2 text-3xl font-bold">Home</h1>
@@ -46,6 +47,7 @@ export function HomePage() {
           ))}
         </ul>
       </main>
+      <SiteFooter className="mt-auto" />
     </div>
   );
 }
